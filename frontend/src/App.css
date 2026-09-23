@@ -1,0 +1,1718 @@
+/* =========================================================
+   HIREINTEL AI - LANDING PAGE
+   ========================================================= */
+
+.app {
+  min-height: 100vh;
+  background: #f7f8fc;
+  color: #172033;
+}
+
+/* =========================================================
+   NAVBAR
+   ========================================================= */
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+
+  width: 100%;
+  height: 76px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 7%;
+
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px);
+
+  border-bottom: 1px solid #edf0f5;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  font-size: 21px;
+  font-weight: 700;
+  color: #172033;
+}
+
+.logo strong {
+  color: #6757e8;
+}
+
+.logo-icon {
+  width: 42px;
+  height: 42px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 12px;
+
+  background: linear-gradient(
+    135deg,
+    #6757e8,
+    #816cf0
+  );
+
+  color: white;
+  font-size: 20px;
+  font-weight: 800;
+
+  box-shadow:
+    0 10px 25px rgba(103, 87, 232, 0.25);
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+}
+
+.nav-links a {
+  color: #667085;
+  font-size: 14px;
+  font-weight: 600;
+
+  transition: 0.2s ease;
+}
+
+.nav-links a:hover {
+  color: #6757e8;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* =========================================================
+   BUTTONS
+   ========================================================= */
+
+.btn {
+  border: none;
+  border-radius: 10px;
+
+  padding: 10px 18px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.btn-primary {
+  color: white;
+
+  background: linear-gradient(
+    135deg,
+    #6757e8,
+    #816cf0
+  );
+
+  box-shadow:
+    0 10px 24px rgba(103, 87, 232, 0.22);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 14px 30px rgba(103, 87, 232, 0.3);
+}
+
+.btn-outline {
+  color: #6757e8;
+
+  background: white;
+
+  border: 1px solid #ddd9fa;
+}
+
+.btn-outline:hover {
+  background: #f7f5ff;
+}
+
+.btn-large {
+  padding: 13px 22px;
+  font-size: 14px;
+}
+
+/* =========================================================
+   HERO
+   ========================================================= */
+
+.hero-section {
+  min-height: 650px;
+
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  align-items: center;
+
+  gap: 70px;
+
+  padding: 85px 7% 90px;
+
+  background:
+    radial-gradient(
+      circle at 15% 25%,
+      rgba(121, 104, 235, 0.14),
+      transparent 35%
+    ),
+    linear-gradient(
+      135deg,
+      #f9faff,
+      #f4f5fc
+    );
+}
+
+.hero-content {
+  max-width: 620px;
+}
+
+.hero-badge {
+  width: fit-content;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 8px 13px;
+
+  border-radius: 30px;
+
+  background: #eeebff;
+
+  color: #6757e8;
+
+  font-size: 12px;
+  font-weight: 700;
+
+  margin-bottom: 24px;
+}
+
+.hero-content h1 {
+  margin: 0 0 22px;
+
+  font-size: clamp(46px, 5vw, 68px);
+
+  line-height: 1.04;
+
+  letter-spacing: -3px;
+
+  color: #172033;
+}
+
+.hero-content h1 span {
+  color: #6757e8;
+}
+
+.hero-description {
+  max-width: 610px;
+
+  margin-bottom: 30px;
+
+  color: #667085;
+
+  font-size: 16px;
+
+  line-height: 1.8;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 12px;
+
+  margin-bottom: 40px;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 38px;
+}
+
+.hero-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hero-stats strong {
+  color: #6757e8;
+  font-size: 18px;
+}
+
+.hero-stats span {
+  color: #7d8798;
+  font-size: 12px;
+}
+
+/* =========================================================
+   DASHBOARD PREVIEW
+   ========================================================= */
+
+.hero-dashboard {
+  width: 100%;
+}
+
+.dashboard-window {
+  overflow: hidden;
+
+  background: white;
+
+  border: 1px solid #e4e8f0;
+
+  border-radius: 18px;
+
+  box-shadow:
+    0 30px 80px rgba(35, 43, 70, 0.12);
+}
+
+.window-header {
+  height: 48px;
+
+  display: flex;
+  align-items: center;
+
+  padding: 0 16px;
+
+  border-bottom: 1px solid #edf0f5;
+
+  background: #fbfcfe;
+}
+
+.window-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.window-dots span {
+  width: 8px;
+  height: 8px;
+
+  border-radius: 50%;
+
+  background: #d6dbe5;
+}
+
+.window-title {
+  margin-left: auto;
+  margin-right: auto;
+
+  color: #7d8798;
+
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dashboard-content {
+  min-height: 370px;
+
+  display: flex;
+}
+
+.dashboard-sidebar {
+  width: 65px;
+
+  padding: 18px 10px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  gap: 18px;
+
+  background: #fafbfe;
+
+  border-right: 1px solid #edf0f5;
+}
+
+.sidebar-logo {
+  width: 34px;
+  height: 34px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 10px;
+
+  background: #6757e8;
+
+  color: white;
+
+  font-weight: 800;
+}
+
+.sidebar-item {
+  width: 35px;
+  height: 35px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 9px;
+
+  color: #8992a4;
+}
+
+.sidebar-item.active {
+  color: #6757e8;
+  background: #eeebff;
+}
+
+.dashboard-main {
+  flex: 1;
+  padding: 24px;
+}
+
+.dashboard-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  margin-bottom: 22px;
+}
+
+.dashboard-heading small {
+  color: #8a94a6;
+  font-size: 11px;
+}
+
+.dashboard-heading h3 {
+  margin-top: 5px;
+
+  color: #172033;
+
+  font-size: 18px;
+}
+
+.profile-circle {
+  width: 36px;
+  height: 36px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: #6757e8;
+
+  color: white;
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* =========================================================
+   DASHBOARD CARDS
+   ========================================================= */
+
+.dashboard-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+
+  gap: 12px;
+
+  margin-bottom: 15px;
+}
+
+.mini-card {
+  padding: 15px;
+
+  border: 1px solid #edf0f5;
+
+  border-radius: 12px;
+
+  background: white;
+}
+
+.mini-card span {
+  display: block;
+
+  color: #8992a4;
+
+  font-size: 10px;
+
+  margin-bottom: 7px;
+}
+
+.mini-card strong {
+  display: block;
+
+  color: #172033;
+
+  font-size: 21px;
+
+  margin-bottom: 7px;
+}
+
+.mini-card small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  color: #22a06b;
+
+  font-size: 9px;
+}
+
+/* =========================================================
+   MATCH CARD
+   ========================================================= */
+
+.match-card {
+  padding: 17px;
+
+  border-radius: 13px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #f8f7ff,
+      #ffffff
+    );
+
+  border: 1px solid #e9e6ff;
+}
+
+.match-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.match-header small {
+  color: #8a94a6;
+  font-size: 10px;
+}
+
+.match-header h4 {
+  margin-top: 5px;
+
+  color: #172033;
+
+  font-size: 14px;
+}
+
+.match-score {
+  color: #6757e8;
+
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 7px;
+
+  overflow: hidden;
+
+  border-radius: 20px;
+
+  background: #eceef4;
+
+  margin: 14px 0;
+}
+
+.progress-fill {
+  width: 92%;
+  height: 100%;
+
+  border-radius: inherit;
+
+  background: linear-gradient(
+    90deg,
+    #6757e8,
+    #8c7cf4
+  );
+}
+
+.skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skills span {
+  padding: 5px 8px;
+
+  border-radius: 6px;
+
+  background: #eeebff;
+
+  color: #6757e8;
+
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* =========================================================
+   SECTION HEADINGS
+   ========================================================= */
+
+.section-heading {
+  max-width: 700px;
+
+  margin: 0 auto 55px;
+
+  text-align: center;
+}
+
+.section-heading > span {
+  color: #6757e8;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  letter-spacing: 1.5px;
+}
+
+.section-heading h2 {
+  margin: 14px 0;
+
+  color: #172033;
+
+  font-size: 42px;
+
+  line-height: 1.15;
+
+  letter-spacing: -1.5px;
+}
+
+.section-heading h2 strong {
+  color: #6757e8;
+}
+
+.section-heading p {
+  color: #7d8798;
+
+  font-size: 15px;
+
+  line-height: 1.8;
+}
+
+/* =========================================================
+   FEATURES
+   ========================================================= */
+
+.features-section {
+  padding: 100px 7%;
+
+  background: white;
+}
+
+.feature-grid {
+  max-width: 1100px;
+
+  margin: auto;
+
+  display: grid;
+
+  grid-template-columns: repeat(4, 1fr);
+
+  gap: 18px;
+}
+
+.feature-card {
+  padding: 28px;
+
+  border-radius: 16px;
+
+  background: white;
+
+  border: 1px solid #e7eaf0;
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border 0.2s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-6px);
+
+  border-color: #ddd8ff;
+
+  box-shadow:
+    0 20px 45px rgba(30, 38, 60, 0.08);
+}
+
+.feature-icon {
+  width: 46px;
+  height: 46px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  margin-bottom: 20px;
+
+  border-radius: 12px;
+
+  background: #f0edff;
+
+  color: #6757e8;
+}
+
+.feature-card h3 {
+  margin-bottom: 12px;
+
+  color: #172033;
+
+  font-size: 17px;
+}
+
+.feature-card p {
+  color: #7d8798;
+
+  font-size: 13px;
+
+  line-height: 1.7;
+}
+
+/* =========================================================
+   WORKFLOW
+   ========================================================= */
+
+.workflow-section {
+  padding: 100px 7%;
+
+  background: white;
+}
+
+.workflow-grid {
+  max-width: 1100px;
+
+  margin: auto;
+
+  display: grid;
+
+  grid-template-columns: repeat(4, 1fr);
+
+  gap: 20px;
+}
+
+.workflow-step {
+  padding: 28px;
+
+  border-radius: 16px;
+
+  background: #f8f9fc;
+
+  border: 1px solid #e9ecf2;
+}
+
+.step-number {
+  width: 42px;
+  height: 42px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  margin-bottom: 20px;
+
+  border-radius: 50%;
+
+  background: #eeebff;
+
+  color: #6757e8;
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workflow-step h3 {
+  margin-bottom: 10px;
+
+  color: #172033;
+
+  font-size: 16px;
+}
+
+.workflow-step p {
+  color: #7d8798;
+
+  font-size: 13px;
+
+  line-height: 1.7;
+}
+
+/* =========================================================
+   ABOUT
+   ========================================================= */
+
+.about-section {
+  padding: 100px 7%;
+
+  background: #f7f9fc;
+}
+
+.about-content {
+  max-width: 900px;
+
+  margin: auto;
+
+  text-align: center;
+}
+
+.about-content > span {
+  color: #6757e8;
+
+  font-size: 11px;
+
+  font-weight: 800;
+
+  letter-spacing: 1.5px;
+}
+
+.about-content h2 {
+  margin: 15px 0 20px;
+
+  color: #172033;
+
+  font-size: 42px;
+
+  line-height: 1.15;
+
+  letter-spacing: -1.5px;
+}
+
+.about-content h2 strong {
+  color: #6757e8;
+}
+
+.about-content > p {
+  max-width: 700px;
+
+  margin: 0 auto 30px;
+
+  color: #7d8798;
+
+  font-size: 15px;
+
+  line-height: 1.8;
+}
+
+.about-points {
+  display: grid;
+
+  grid-template-columns: repeat(2, 1fr);
+
+  gap: 13px;
+
+  max-width: 650px;
+
+  margin: auto;
+}
+
+.about-points div {
+  display: flex;
+
+  align-items: center;
+
+  gap: 9px;
+
+  color: #536075;
+
+  font-size: 14px;
+}
+
+.about-points svg {
+  color: #6757e8;
+}
+
+/* =========================================================
+   FOOTER
+   ========================================================= */
+
+.footer {
+  padding: 45px 7%;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 25px;
+
+  background: white;
+
+  border-top: 1px solid #e8ebf1;
+}
+
+.footer p {
+  color: #8a94a6;
+
+  font-size: 12px;
+}
+
+.copyright {
+  color: #a0a8b7;
+
+  font-size: 11px;
+}
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 1100px) {
+  .hero-section {
+    grid-template-columns: 1fr;
+
+    gap: 50px;
+  }
+
+  .hero-content {
+    max-width: 750px;
+  }
+
+  .hero-dashboard {
+    max-width: 750px;
+  }
+
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .workflow-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 800px) {
+  .navbar {
+    padding: 0 5%;
+  }
+
+  .nav-links {
+    display: none;
+  }
+
+  .hero-section {
+    padding: 65px 5%;
+  }
+
+  .hero-content h1 {
+    font-size: 48px;
+  }
+
+  .hero-stats {
+    gap: 22px;
+  }
+
+  .features-section,
+  .workflow-section,
+  .about-section {
+    padding: 75px 5%;
+  }
+
+  .section-heading h2,
+  .about-content h2 {
+    font-size: 34px;
+  }
+
+  .footer {
+    flex-direction: column;
+
+    text-align: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .nav-actions .btn-outline {
+    display: none;
+  }
+
+  .hero-content h1 {
+    font-size: 40px;
+
+    letter-spacing: -2px;
+  }
+
+  .hero-buttons {
+    flex-direction: column;
+  }
+
+  .hero-buttons .btn {
+    width: 100%;
+  }
+
+  .hero-stats {
+    display: grid;
+
+    grid-template-columns: 1fr;
+
+    gap: 15px;
+  }
+
+  .dashboard-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-sidebar {
+    width: 50px;
+  }
+
+  .dashboard-main {
+    padding: 15px;
+  }
+
+  .feature-grid,
+  .workflow-grid,
+  .about-points {
+    grid-template-columns: 1fr;
+  }
+
+  .section-heading h2,
+  .about-content h2 {
+    font-size: 30px;
+  }
+}
+/* =========================================================
+   HIREINTEL AI - LOGIN PAGE
+   ========================================================= */
+
+.login-page {
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 40px 20px;
+
+  background:
+    radial-gradient(
+      circle at 15% 20%,
+      rgba(109, 92, 246, 0.13),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at 90% 80%,
+      rgba(124, 108, 245, 0.10),
+      transparent 30%
+    ),
+    #f7f8fc;
+
+  box-sizing: border-box;
+}
+
+
+.login-background {
+  position: fixed;
+  inset: 0;
+
+  pointer-events: none;
+}
+
+
+.login-card {
+  position: relative;
+  z-index: 2;
+
+  width: 100%;
+  max-width: 575px;
+
+  background: rgba(255, 255, 255, 0.96);
+
+  border: 1px solid #e5e7f0;
+
+  border-radius: 26px;
+
+  padding: 52px;
+
+  box-shadow:
+    0 30px 80px rgba(24, 30, 60, 0.12);
+
+  box-sizing: border-box;
+}
+
+
+/* =========================================================
+   LOGIN BRAND
+   ========================================================= */
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  margin-bottom: 48px;
+}
+
+
+.login-logo {
+  width: 56px;
+  height: 56px;
+
+  border-radius: 16px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: linear-gradient(
+    135deg,
+    #6d5df5,
+    #755cf5
+  );
+
+  color: white;
+
+  font-size: 25px;
+  font-weight: 800;
+
+  box-shadow:
+    0 12px 25px rgba(109, 93, 245, 0.28);
+}
+
+
+.login-brand-name {
+  font-size: 25px;
+  font-weight: 800;
+  color: #111827;
+}
+
+
+.login-brand-name span {
+  color: #6654ed;
+}
+
+
+/* =========================================================
+   LOGIN HEADING
+   ========================================================= */
+
+.login-heading {
+  margin-bottom: 34px;
+}
+
+
+.login-heading h1 {
+  margin: 0 0 12px;
+
+  font-size: 43px;
+  line-height: 1.1;
+
+  letter-spacing: -1.5px;
+
+  color: #111827;
+}
+
+
+.login-heading p {
+  margin: 0;
+
+  font-size: 16px;
+  line-height: 1.7;
+
+  color: #72809b;
+}
+
+
+/* =========================================================
+   ERROR
+   ========================================================= */
+
+.login-error {
+  margin-bottom: 24px;
+
+  padding: 14px 16px;
+
+  border-radius: 12px;
+
+  background: #fff1f2;
+
+  border: 1px solid #fecdd3;
+
+  color: #dc2626;
+
+  font-size: 14px;
+}
+
+
+/* =========================================================
+   FORM
+   ========================================================= */
+
+.form-group {
+  margin-bottom: 23px;
+}
+
+
+.form-group label {
+  display: block;
+
+  margin-bottom: 9px;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  color: #17213a;
+}
+
+
+.form-group input {
+  width: 100%;
+
+  height: 58px;
+
+  padding: 0 17px;
+
+  box-sizing: border-box;
+
+  border: 1px solid #d8ddea;
+
+  border-radius: 12px;
+
+  background: #ffffff;
+
+  color: #182238;
+
+  font-size: 15px;
+
+  outline: none;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+
+.form-group input::placeholder {
+  color: #a1abc0;
+}
+
+
+.form-group input:focus {
+  border-color: #705cf5;
+
+  box-shadow:
+    0 0 0 4px rgba(112, 92, 245, 0.10);
+}
+
+
+/* =========================================================
+   LOGIN BUTTON
+   ========================================================= */
+
+.login-button {
+  width: 100%;
+
+  height: 58px;
+
+  border: none;
+  border-radius: 12px;
+
+  background: linear-gradient(
+    135deg,
+    #6654ed,
+    #765cf5
+  );
+
+  color: white;
+
+  font-size: 16px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 14px 28px rgba(103, 84, 237, 0.24);
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+
+
+.login-button:hover {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 18px 35px rgba(103, 84, 237, 0.30);
+}
+
+
+.login-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+
+/* =========================================================
+   REGISTER
+   ========================================================= */
+
+.login-register {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  margin-top: 30px;
+
+  font-size: 14px;
+
+  color: #77829a;
+}
+
+
+.login-register a {
+  color: #6654ed;
+
+  font-weight: 700;
+
+  text-decoration: none;
+}
+
+
+.login-register a:hover {
+  text-decoration: underline;
+}
+
+
+/* =========================================================
+   FOOTER
+   ========================================================= */
+
+.login-footer {
+  margin-top: 34px;
+
+  padding-top: 25px;
+
+  border-top: 1px solid #e8eaf1;
+
+  text-align: center;
+
+  color: #9aa4b8;
+
+  font-size: 13px;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 650px) {
+
+  .login-page {
+    padding: 20px 14px;
+  }
+
+  .login-card {
+    padding: 32px 24px;
+
+    border-radius: 20px;
+  }
+
+  .login-brand {
+    margin-bottom: 35px;
+  }
+
+  .login-heading h1 {
+    font-size: 35px;
+  }
+
+  .login-heading p {
+    font-size: 14px;
+  }
+
+  .login-register {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+}
+/* =========================================================
+   LANDING PAGE DASHBOARD PREVIEW FIX
+   Prevent CandidateDashboard.css from affecting
+   the landing-page dashboard preview.
+========================================================= */
+
+.app .dashboard-content {
+  display: flex;
+  width: 100%;
+  min-height: 370px;
+  margin: 0;
+  padding: 0;
+  position: static;
+}
+
+.app .dashboard-sidebar {
+  position: static !important;
+
+  width: 66px !important;
+  min-width: 66px !important;
+  height: auto !important;
+  min-height: 370px !important;
+
+  margin: 0 !important;
+
+  padding: 18px 0 !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+
+  flex-direction: column !important;
+  gap: 18px !important;
+
+  border-right: 1px solid #edf0f5 !important;
+  border-left: none !important;
+
+  background: #fbfcfe !important;
+
+  overflow: visible !important;
+
+  transform: none !important;
+  box-shadow: none !important;
+
+  z-index: auto !important;
+}
+
+.app .dashboard-sidebar .sidebar-logo {
+  position: static !important;
+
+  width: 32px !important;
+  height: 32px !important;
+
+  margin: 0 !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border-radius: 9px !important;
+
+  background: #6757e8 !important;
+  color: white !important;
+
+  font-size: 13px !important;
+  font-weight: 800 !important;
+}
+
+.app .dashboard-sidebar .sidebar-item {
+  position: static !important;
+
+  width: 34px !important;
+  height: 34px !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  border: none !important;
+  border-radius: 8px !important;
+
+  background: transparent !important;
+  color: #9aa3b3 !important;
+
+  font-size: 15px !important;
+}
+
+.app .dashboard-sidebar .sidebar-item.active {
+  background: #f0edff !important;
+  color: #6757e8 !important;
+}
+
+.app .dashboard-main {
+  position: static !important;
+
+  width: auto !important;
+  min-width: 0 !important;
+  height: auto !important;
+
+  margin: 0 !important;
+
+  padding: 25px !important;
+
+  flex: 1 !important;
+
+  background: white !important;
+
+  overflow: visible !important;
+
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Prevent candidate dashboard page positioning
+   from affecting the landing preview */
+
+.app .dashboard-window {
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+
+  margin: 0 auto !important;
+}
+
+.app .dashboard-window .dashboard-content {
+  position: static !important;
+}
+
+.app .dashboard-window .dashboard-heading {
+  position: static !important;
+}
+
+.app .dashboard-window .dashboard-cards {
+  position: static !important;
+}
+
+.app .dashboard-window .match-card {
+  position: static !important;
+}
+/* =========================================================
+   GLOBAL RESPONSIVE FIX
+   ========================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+html {
+  box-sizing: border-box;
+}
+
+body {
+  width: 100%;
+  min-height: 100vh;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* =========================================================
+   FINAL NAVIGATION / RESPONSIVE FIX
+   ========================================================= */
+
+header,
+.navbar,
+nav {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  width: 100%;
+  min-width: 0;
+  max-width: 100vw;
+  height: 76px;
+
+  padding: 0 clamp(16px, 5vw, 72px);
+
+  overflow: hidden;
+
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(14px);
+
+  border-bottom: 1px solid #edf0f5;
+}
+
+.navbar-container,
+.header,
+.header-container {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.logo {
+  flex: 0 0 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(18px, 2.5vw, 34px);
+
+  min-width: 0;
+  flex: 1 1 auto;
+  margin: 0 24px;
+}
+
+.nav-links a {
+  white-space: nowrap;
+}
+
+.nav-actions,
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+
+.nav-actions .btn,
+.header-actions .btn {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.app,
+.login-page,
+.hero-section,
+.features-section,
+.workflow-section,
+.about-section,
+.footer {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1100px) {
+  .navbar {
+    padding-left: 28px;
+    padding-right: 28px;
+  }
+
+  .nav-links {
+    gap: 18px;
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+
+  .nav-actions {
+    gap: 7px;
+  }
+
+  .nav-actions .btn {
+    padding-left: 13px;
+    padding-right: 13px;
+  }
+}
+
+@media (max-width: 800px) {
+  .navbar {
+    height: 70px;
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .nav-links {
+    display: none;
+  }
+
+  .nav-actions {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .navbar {
+    height: 66px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .logo {
+    font-size: 18px;
+    gap: 7px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 17px;
+  }
+
+  .nav-actions {
+    gap: 6px;
+  }
+
+  .nav-actions .btn {
+    padding: 9px 11px;
+    font-size: 13px;
+  }
+
+  .nav-actions .btn-outline {
+    display: none;
+  }
+}
+
+.login-page {
+  width: 100%;
+  max-width: 100vw;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.login-card {
+  width: min(100%, 575px);
+  max-width: calc(100vw - 40px);
+}
+
+@media (max-width: 650px) {
+  .login-card {
+    max-width: calc(100vw - 28px);
+  }
+}

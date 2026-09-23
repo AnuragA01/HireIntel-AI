@@ -1,0 +1,57 @@
+﻿# ================================
+# HireIntel AI - Git Ignore
+# ================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python testing/cache
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Vite
+.vite/
+
+# VS Code
+.vscode/
+
+# IntelliJ / PyCharm
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+
+# Python packaging
+*.egg-info/
