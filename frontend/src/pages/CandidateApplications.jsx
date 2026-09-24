@@ -3,6 +3,49 @@ import { useNavigate } from "react-router-dom";
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 
+/* ============================================================
+   ERROR MESSAGE HELPER
+============================================================ */
+
+const getErrorMessage = (data) => {
+  if (typeof data?.detail === "string") {
+    return data.detail;
+  }
+
+  if (Array.isArray(data?.detail)) {
+    return data.detail
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+
+        return (
+          item?.msg ||
+          item?.message ||
+          "Invalid request."
+        );
+      })
+      .join(", ");
+  }
+
+  if (
+    data?.detail &&
+    typeof data.detail === "object"
+  ) {
+    return (
+      data.detail.message ||
+      data.detail.error ||
+      JSON.stringify(data.detail)
+    );
+  }
+
+  return "Unable to load your applications.";
+};
+
+/* ============================================================
+   CANDIDATE APPLICATIONS
+============================================================ */
+
 function CandidateApplications() {
   const navigate = useNavigate();
 
@@ -11,50 +54,32 @@ function CandidateApplications() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const getErrorMessage = (data, fallback) => {
-    if (typeof data?.detail === "string") {
-      return data.detail;
-    }
-
-    if (Array.isArray(data?.detail)) {
-      return data.detail
-        .map((item) => {
-          if (typeof item === "string") return item;
-
-          return (
-            item?.msg ||
-            item?.message ||
-            "Invalid request."
-          );
-        })
-        .join(", ");
-    }
-
-    if (data?.detail && typeof data.detail === "object") {
-      return (
-        data.detail.message ||
-        data.detail.error ||
-        JSON.stringify(data.detail)
-      );
-    }
-
-    return fallback;
-  };
+  /* ==========================================================
+     LOAD APPLICATIONS
+  ========================================================== */
 
   useEffect(() => {
     let cancelled = false;
 
     const loadApplications = async () => {
-      const token = localStorage.getItem("hireintel_token");
+      const token = localStorage.getItem(
+        "hireintel_token"
+      );
 
       if (!token) {
-        navigate("/login", { replace: true });
+        navigate("/login", {
+          replace: true,
+        });
         return;
       }
 
       try {
         setLoading(true);
         setError("");
+
+        /* ====================================================
+           GET CANDIDATE APPLICATIONS
+        ==================================================== */
 
         const response = await fetch(
           `${API_BASE_URL}/applications/my-applications`,
@@ -67,75 +92,152 @@ function CandidateApplications() {
           }
         );
 
-        const data = await response.json().catch(() => null);
+        const data =
+          await response.json().catch(() => null);
+
+        /* ====================================================
+           TOKEN EXPIRED
+        ==================================================== */
 
         if (response.status === 401) {
-          localStorage.removeItem("hireintel_token");
-          navigate("/login", { replace: true });
+          localStorage.removeItem(
+            "hireintel_token"
+          );
+
+          navigate("/login", {
+            replace: true,
+          });
+
           return;
         }
 
+        /* ====================================================
+           API ERROR
+        ==================================================== */
+
         if (!response.ok) {
           throw new Error(
-            getErrorMessage(
-              data,
-              "Unable to load your applications."
-            )
+            getErrorMessage(data)
           );
         }
 
-        const applicationList = Array.isArray(data)
-          ? data
-          : [];
+        /* ====================================================
+           APPLICATION LIST
+        ==================================================== */
 
-        if (!cancelled) {
-          setApplications(applicationList);
+        const applicationList =
+          Array.isArray(data)
+            ? data
+            : [];
+
+        if (cancelled) {
+          return;
         }
 
-        // Load job details for the applications so the
-        // application cards can show the job title/company.
+        setApplications(applicationList);
+
+        /* ====================================================
+           GET JOB DETAILS
+           
+           Application API may return only job_id.
+           We fetch each job to show:
+           - Job title
+           - Company
+           - Location
+        ==================================================== */
+
         const uniqueJobIds = [
           ...new Set(
             applicationList
-              .map((application) => application?.job_id)
+              .map(
+                (application) =>
+                  application?.job_id
+              )
               .filter(Boolean)
           ),
         ];
 
-        const jobEntries = await Promise.all(
-          uniqueJobIds.map(async (jobId) => {
-            try {
-              const jobResponse = await fetch(
-                `${API_BASE_URL}/candidate/jobs/${jobId}`,
-                {
-                  method: "GET",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: "application/json",
-                  },
+        const jobEntries =
+          await Promise.all(
+            uniqueJobIds.map(
+              async (jobId) => {
+                try {
+                  const jobResponse =
+                    await fetch(
+                      `${API_BASE_URL}/candidate/jobs/${jobId}`,
+                      {
+                        method: "GET",
+                        headers: {
+                          Authorization: `Bearer ${token}`,
+                          Accept:
+                            "application/json",
+                        },
+                      }
+                    );
+
+                  if (
+                    jobResponse.status ===
+                    401
+                  ) {
+                    localStorage.removeItem(
+                      "hireintel_token"
+                    );
+
+                    navigate("/login", {
+                      replace: true,
+                    });
+
+                    return [
+                      String(jobId),
+                      null,
+                    ];
+                  }
+
+                  if (
+                    !jobResponse.ok
+                  ) {
+                    return [
+                      String(jobId),
+                      null,
+                    ];
+                  }
+
+                  const jobData =
+                    await jobResponse
+                      .json()
+                      .catch(
+                        () => null
+                      );
+
+                  return [
+                    String(jobId),
+                    jobData,
+                  ];
+                } catch (jobError) {
+                  console.error(
+                    `Unable to load job ${jobId}:`,
+                    jobError
+                  );
+
+                  return [
+                    String(jobId),
+                    null,
+                  ];
                 }
-              );
-
-              if (!jobResponse.ok) {
-                return [String(jobId), null];
               }
-
-              const jobData =
-                await jobResponse.json().catch(() => null);
-
-              return [String(jobId), jobData];
-            } catch {
-              return [String(jobId), null];
-            }
-          })
-        );
+            )
+          );
 
         if (!cancelled) {
-          setJobs(Object.fromEntries(jobEntries));
+          setJobs(
+            Object.fromEntries(
+              jobEntries
+            )
+          );
         }
       } catch (requestError) {
         console.error(
-          "Applications loading error:",
+          "Candidate applications error:",
           requestError
         );
 
@@ -159,6 +261,10 @@ function CandidateApplications() {
     };
   }, [navigate]);
 
+  /* ==========================================================
+     DATE FORMAT
+  ========================================================== */
+
   const formatDate = (value) => {
     if (!value) {
       return "Not available";
@@ -170,16 +276,25 @@ function CandidateApplications() {
       return String(value);
     }
 
-    return date.toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+    return date.toLocaleDateString(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
   };
+
+  /* ==========================================================
+     STATUS STYLE
+  ========================================================== */
 
   const getStatusStyle = (status) => {
     switch (
-      String(status || "Applied").toLowerCase()
+      String(
+        status || "Applied"
+      ).toLowerCase()
     ) {
       case "shortlisted":
         return {
@@ -213,43 +328,76 @@ function CandidateApplications() {
     }
   };
 
+  /* ==========================================================
+     STATUS COUNT
+  ========================================================== */
+
   const countStatus = (status) => {
     return applications.filter(
       (application) =>
-        String(application?.status || "").toLowerCase() ===
-        status
+        String(
+          application?.status || ""
+        ).toLowerCase() === status
     ).length;
   };
+
+  /* ==========================================================
+     LOADING PAGE
+  ========================================================== */
 
   if (loading) {
     return (
       <div style={styles.centerPage}>
         <div style={styles.loadingCard}>
-          <div style={styles.loadingIcon}>H</div>
+          <div style={styles.loadingIcon}>
+            H
+          </div>
 
-          <h2>Loading Applications...</h2>
+          <h2>
+            Loading Applications...
+          </h2>
 
           <p style={styles.muted}>
-            Fetching your submitted applications.
+            Fetching your submitted
+            applications.
           </p>
         </div>
       </div>
     );
   }
 
+  /* ==========================================================
+     MAIN PAGE
+  ========================================================== */
+
   return (
     <div style={styles.page}>
-      {/* SIDEBAR */}
+
+      {/* ======================================================
+          SIDEBAR
+      ====================================================== */}
+
       <aside style={styles.sidebar}>
+
+        {/* LOGO */}
+
         <div style={styles.logoContainer}>
-          <div style={styles.logoIcon}>H</div>
+
+          <div style={styles.logoIcon}>
+            H
+          </div>
 
           <div style={styles.logoText}>
-            HireIntel <span>AI</span>
+            HireIntel{" "}
+            <span>AI</span>
           </div>
+
         </div>
 
+        {/* NAVIGATION */}
+
         <div style={styles.sidebarSection}>
+
           <p style={styles.sidebarLabel}>
             CANDIDATE
           </p>
@@ -258,7 +406,9 @@ function CandidateApplications() {
             label="Dashboard"
             icon="▦"
             onClick={() =>
-              navigate("/candidate/dashboard")
+              navigate(
+                "/candidate/dashboard"
+              )
             }
           />
 
@@ -266,7 +416,9 @@ function CandidateApplications() {
             label="Find Jobs"
             icon="⌕"
             onClick={() =>
-              navigate("/candidate/jobs")
+              navigate(
+                "/candidate/jobs"
+              )
             }
           />
 
@@ -274,7 +426,9 @@ function CandidateApplications() {
             label="My Resumes"
             icon="▤"
             onClick={() =>
-              navigate("/candidate/resumes")
+              navigate(
+                "/candidate/resumes"
+              )
             }
           />
 
@@ -288,7 +442,9 @@ function CandidateApplications() {
             label="Job Matches"
             icon="✦"
             onClick={() =>
-              navigate("/candidate/job-matches")
+              navigate(
+                "/candidate/job-matches"
+              )
             }
           />
 
@@ -296,17 +452,25 @@ function CandidateApplications() {
             label="Profile"
             icon="♙"
             onClick={() =>
-              navigate("/candidate/profile")
+              navigate(
+                "/candidate/profile"
+              )
             }
           />
+
         </div>
 
+        {/* BOTTOM */}
+
         <div style={styles.sidebarBottom}>
+
           <NavButton
             label="Settings"
             icon="⚙"
             onClick={() =>
-              navigate("/candidate/settings")
+              navigate(
+                "/candidate/settings"
+              )
             }
           />
 
@@ -326,13 +490,23 @@ function CandidateApplications() {
             <span>↪</span>
             Logout
           </button>
+
         </div>
+
       </aside>
 
-      {/* MAIN CONTENT */}
+      {/* ======================================================
+          MAIN CONTENT
+      ====================================================== */}
+
       <main style={styles.main}>
+
+        {/* HEADER */}
+
         <header style={styles.header}>
+
           <div>
+
             <p style={styles.eyebrow}>
               CAREER ACTIVITY
             </p>
@@ -342,30 +516,39 @@ function CandidateApplications() {
             </h1>
 
             <p style={styles.subtitle}>
-              Track your submitted applications and
-              recruitment progress.
+              Track your submitted
+              applications and recruitment
+              progress.
             </p>
+
           </div>
 
           <button
             type="button"
             style={styles.primaryButton}
             onClick={() =>
-              navigate("/candidate/jobs")
+              navigate(
+                "/candidate/jobs"
+              )
             }
           >
             Find More Jobs →
           </button>
+
         </header>
 
         {/* ERROR */}
+
         {error && (
           <div style={styles.errorBox}>
+
             <strong>
               Unable to load applications
             </strong>
 
-            <p>{error}</p>
+            <p>
+              {error}
+            </p>
 
             <button
               type="button"
@@ -376,91 +559,155 @@ function CandidateApplications() {
             >
               Try Again
             </button>
+
           </div>
         )}
 
         {!error && (
           <>
-            {/* SUMMARY CARDS */}
-            <section style={styles.summaryGrid}>
+
+            {/* ==================================================
+                SUMMARY CARDS
+            ================================================== */}
+
+            <section
+              style={styles.summaryGrid}
+            >
+
               <SummaryCard
                 icon="▣"
                 label="Total Applications"
-                value={applications.length}
+                value={
+                  applications.length
+                }
               />
 
               <SummaryCard
                 icon="★"
                 label="Shortlisted"
-                value={countStatus("shortlisted")}
+                value={countStatus(
+                  "shortlisted"
+                )}
               />
 
               <SummaryCard
                 icon="◎"
                 label="Interviews"
-                value={countStatus("interview")}
+                value={countStatus(
+                  "interview"
+                )}
               />
 
               <SummaryCard
                 icon="✓"
                 label="Hired"
-                value={countStatus("hired")}
+                value={countStatus(
+                  "hired"
+                )}
               />
+
             </section>
 
-            {/* EMPTY STATE */}
-            {applications.length === 0 ? (
-              <div style={styles.emptyCard}>
-                <div style={styles.emptyIcon}>
+            {/* ==================================================
+                NO APPLICATIONS
+            ================================================== */}
+
+            {applications.length ===
+            0 ? (
+
+              <div
+                style={
+                  styles.emptyCard
+                }
+              >
+
+                <div
+                  style={
+                    styles.emptyIcon
+                  }
+                >
                   ▣
                 </div>
 
-                <h2>No applications yet</h2>
+                <h2>
+                  No applications yet
+                </h2>
 
                 <p>
-                  You haven't applied to any jobs yet.
-                  Explore available opportunities and
-                  submit your first application.
+                  You haven't applied to
+                  any jobs yet. Explore
+                  available opportunities
+                  and submit your first
+                  application.
                 </p>
 
                 <button
                   type="button"
-                  style={styles.primaryButton}
+                  style={
+                    styles.primaryButton
+                  }
                   onClick={() =>
-                    navigate("/candidate/jobs")
+                    navigate(
+                      "/candidate/jobs"
+                    )
                   }
                 >
                   Browse Jobs →
                 </button>
+
               </div>
+
             ) : (
-              /* APPLICATIONS */
+
+              /* =================================================
+                 APPLICATION LIST
+              ================================================= */
+
               <section>
-                <div style={styles.sectionHeader}>
+
+                <div
+                  style={
+                    styles.sectionHeader
+                  }
+                >
+
                   <div>
+
                     <h2
-                      style={styles.sectionTitle}
+                      style={
+                        styles.sectionTitle
+                      }
                     >
                       Submitted Applications
                     </h2>
 
                     <p
-                      style={styles.sectionText}
+                      style={
+                        styles.sectionText
+                      }
                     >
-                      {applications.length} application
-                      {applications.length !== 1
+                      {applications.length}{" "}
+                      application
+                      {applications.length !==
+                      1
                         ? "s"
                         : ""}{" "}
                       found.
                     </p>
+
                   </div>
+
                 </div>
 
                 <div
-                  style={styles.applicationList}
+                  style={
+                    styles.applicationList
+                  }
                 >
+
                   {applications.map(
                     (application) => {
+
                       const job =
                         jobs[
                           String(
@@ -485,8 +732,17 @@ function CandidateApplications() {
                         job?.company ||
                         "Company information unavailable";
 
+                      const location =
+                        application?.location ||
+                        job?.location ||
+                        "Location not available";
+
                       const score =
                         application?.match_score;
+
+                      const status =
+                        application?.status ||
+                        "Applied";
 
                       return (
                         <article
@@ -497,6 +753,9 @@ function CandidateApplications() {
                             styles.applicationCard
                           }
                         >
+
+                          {/* JOB ICON */}
+
                           <div
                             style={
                               styles.jobIcon
@@ -505,11 +764,14 @@ function CandidateApplications() {
                             💼
                           </div>
 
+                          {/* JOB DETAILS */}
+
                           <div
                             style={
                               styles.jobInfo
                             }
                           >
+
                             <h3
                               style={
                                 styles.jobTitle
@@ -528,9 +790,24 @@ function CandidateApplications() {
 
                             <div
                               style={
+                                styles.location
+                              }
+                            >
+                              📍 {location}
+                            </div>
+
+                            <div
+                              style={
                                 styles.metaRow
                               }
                             >
+
+                              <span>
+                                Application ID:{" "}
+                                {application?.id ||
+                                  "N/A"}
+                              </span>
+
                               <span>
                                 Job ID:{" "}
                                 {application?.job_id ||
@@ -549,49 +826,53 @@ function CandidateApplications() {
                                   application?.applied_at
                                 )}
                               </span>
+
                             </div>
+
                           </div>
 
-                          {/* AI MATCH SCORE */}
+                          {/* MATCH SCORE */}
+
                           <div
                             style={
                               styles.scoreBox
                             }
                           >
-                            <span
-                              style={
-                                styles.scoreLabel
-                              }
-                            >
+
+                            <span>
                               AI Match
                             </span>
 
-                            <strong
-                              style={
-                                styles.scoreValue
-                              }
-                            >
-                              {score !== null &&
-                              score !== undefined
-                                ? `${score}%`
+                            <strong>
+                              {score !==
+                                null &&
+                              score !==
+                                undefined
+                                ? `${Number(
+                                    score
+                                  ).toFixed(
+                                    2
+                                  )}%`
                                 : "N/A"}
                             </strong>
+
                           </div>
 
                           {/* STATUS */}
+
                           <div
                             style={{
                               ...styles.statusBadge,
                               ...getStatusStyle(
-                                application?.status
+                                status
                               ),
                             }}
                           >
-                            {application?.status ||
-                              "Applied"}
+                            {status}
                           </div>
 
                           {/* VIEW JOB */}
+
                           <button
                             type="button"
                             style={
@@ -601,6 +882,7 @@ function CandidateApplications() {
                               !application?.job_id
                             }
                             onClick={() => {
+
                               if (
                                 application?.job_id
                               ) {
@@ -608,25 +890,35 @@ function CandidateApplications() {
                                   `/candidate/jobs/${application.job_id}`
                                 );
                               }
+
                             }}
                           >
                             View Job
                           </button>
+
                         </article>
                       );
                     }
                   )}
+
                 </div>
+
               </section>
             )}
+
           </>
         )}
+
       </main>
+
     </div>
   );
 }
 
-/* NAVIGATION BUTTON */
+/* ============================================================
+   NAV BUTTON
+============================================================ */
+
 function NavButton({
   label,
   icon,
@@ -650,7 +942,10 @@ function NavButton({
   );
 }
 
-/* SUMMARY CARD */
+/* ============================================================
+   SUMMARY CARD
+============================================================ */
+
 function SummaryCard({
   icon,
   label,
@@ -658,25 +953,41 @@ function SummaryCard({
 }) {
   return (
     <div style={styles.summaryCard}>
+
       <div style={styles.summaryIcon}>
         {icon}
       </div>
 
       <div>
-        <span style={styles.summaryLabel}>
+
+        <span
+          style={
+            styles.summaryLabel
+          }
+        >
           {label}
         </span>
 
-        <strong style={styles.summaryValue}>
+        <strong
+          style={
+            styles.summaryValue
+          }
+        >
           {value}
         </strong>
+
       </div>
+
     </div>
   );
 }
 
-/* STYLES */
+/* ============================================================
+   STYLES
+============================================================ */
+
 const styles = {
+
   page: {
     minHeight: "100vh",
     display: "flex",
@@ -690,7 +1001,8 @@ const styles = {
     width: "250px",
     minHeight: "100vh",
     background: "#ffffff",
-    borderRight: "1px solid #e8eaf0",
+    borderRight:
+      "1px solid #e8eaf0",
     display: "flex",
     flexDirection: "column",
     padding: "28px 18px",
@@ -703,7 +1015,8 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    padding: "5px 10px 35px",
+    padding:
+      "5px 10px 35px",
   },
 
   logoIcon: {
@@ -761,7 +1074,8 @@ const styles = {
   },
 
   sidebarBottom: {
-    borderTop: "1px solid #eeeeee",
+    borderTop:
+      "1px solid #eeeeee",
     paddingTop: "18px",
   },
 
@@ -783,13 +1097,15 @@ const styles = {
 
   main: {
     flex: 1,
-    padding: "38px 45px 60px",
+    padding:
+      "38px 45px 60px",
     minWidth: 0,
   },
 
   header: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "flex-start",
     gap: "20px",
     marginBottom: "30px",
@@ -835,7 +1151,8 @@ const styles = {
 
   summaryCard: {
     background: "#ffffff",
-    border: "1px solid #e8eaf0",
+    border:
+      "1px solid #e8eaf0",
     borderRadius: "16px",
     padding: "22px",
     display: "flex",
@@ -853,7 +1170,6 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     fontSize: "19px",
-    flexShrink: 0,
   },
 
   summaryLabel: {
@@ -891,7 +1207,8 @@ const styles = {
 
   applicationCard: {
     background: "#ffffff",
-    border: "1px solid #e8eaf0",
+    border:
+      "1px solid #e8eaf0",
     borderRadius: "18px",
     padding: "22px",
     display: "flex",
@@ -909,7 +1226,6 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     fontSize: "21px",
-    flexShrink: 0,
   },
 
   jobInfo: {
@@ -919,12 +1235,18 @@ const styles = {
 
   jobTitle: {
     margin: 0,
-    fontSize: "17px",
+    fontSize: "18px",
   },
 
   company: {
     color: "#6d7383",
     margin: "5px 0",
+  },
+
+  location: {
+    color: "#777e90",
+    fontSize: "12px",
+    marginBottom: "8px",
   },
 
   metaRow: {
@@ -933,25 +1255,11 @@ const styles = {
     gap: "12px",
     color: "#969ba8",
     fontSize: "11px",
-    marginTop: "8px",
   },
 
   scoreBox: {
-    minWidth: "75px",
+    minWidth: "90px",
     textAlign: "center",
-  },
-
-  scoreLabel: {
-    display: "block",
-    color: "#9297a5",
-    fontSize: "10px",
-  },
-
-  scoreValue: {
-    display: "block",
-    color: "#6657e8",
-    fontSize: "21px",
-    marginTop: "3px",
   },
 
   statusBadge: {
@@ -962,7 +1270,8 @@ const styles = {
   },
 
   viewButton: {
-    border: "1px solid #ddd9f6",
+    border:
+      "1px solid #ddd9f6",
     background: "#ffffff",
     color: "#6657e8",
     padding: "10px 15px",
@@ -973,7 +1282,8 @@ const styles = {
 
   emptyCard: {
     background: "#ffffff",
-    border: "1px solid #e8eaf0",
+    border:
+      "1px solid #e8eaf0",
     borderRadius: "20px",
     padding: "70px 30px",
     textAlign: "center",
@@ -988,13 +1298,15 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    margin: "0 auto 20px",
+    margin:
+      "0 auto 20px",
     fontSize: "25px",
   },
 
   errorBox: {
     background: "#fff0f0",
-    border: "1px solid #ffd4d4",
+    border:
+      "1px solid #ffd4d4",
     color: "#b42323",
     borderRadius: "14px",
     padding: "20px",
@@ -1022,7 +1334,8 @@ const styles = {
 
   loadingCard: {
     background: "#ffffff",
-    border: "1px solid #e8eaf0",
+    border:
+      "1px solid #e8eaf0",
     borderRadius: "20px",
     padding: "50px",
     textAlign: "center",
@@ -1039,7 +1352,8 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    margin: "0 auto 20px",
+    margin:
+      "0 auto 20px",
     fontSize: "22px",
     fontWeight: "800",
   },
