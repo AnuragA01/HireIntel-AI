@@ -6,9 +6,13 @@ const API_BASE_URL = "http://127.0.0.1:8000";
 function CandidateProfile() {
   const navigate = useNavigate();
 
-  const [profile, setProfile] = useState(null);
+  const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // ============================================================
+  // LOAD PROFILE
+  // ============================================================
 
   useEffect(() => {
     let cancelled = false;
@@ -42,11 +46,19 @@ function CandidateProfile() {
           return;
         }
 
+        // ======================================================
+        // UNAUTHORIZED
+        // ======================================================
+
         if (response.status === 401) {
           localStorage.removeItem("hireintel_token");
           navigate("/login", { replace: true });
           return;
         }
+
+        // ======================================================
+        // API ERROR
+        // ======================================================
 
         if (!response.ok) {
           let message = "Unable to load your profile.";
@@ -55,20 +67,39 @@ function CandidateProfile() {
             message = data.detail;
           } else if (Array.isArray(data?.detail)) {
             message = data.detail
-              .map((item) => item?.msg || "Invalid request.")
+              .map(
+                (item) =>
+                  item?.msg || "Invalid request."
+              )
               .join(", ");
           }
 
           throw new Error(message);
         }
 
-        setProfile(data || {});
+        // ======================================================
+        // IMPORTANT
+        //
+        // Backend response structure:
+        //
+        // {
+        //   profile: {...},
+        //   statistics: {...},
+        //   latest_resume: {...},
+        //   best_job_match: {...}
+        // }
+        // ======================================================
+
+        setProfileData(data || {});
       } catch (requestError) {
         if (cancelled) {
           return;
         }
 
-        console.error("Profile loading error:", requestError);
+        console.error(
+          "Profile loading error:",
+          requestError
+        );
 
         setError(
           requestError?.message ||
@@ -88,6 +119,10 @@ function CandidateProfile() {
     };
   }, [navigate]);
 
+  // ============================================================
+  // SAFE VALUE HELPER
+  // ============================================================
+
   const getValue = (...values) => {
     for (const value of values) {
       if (
@@ -102,96 +137,138 @@ function CandidateProfile() {
     return "";
   };
 
+  // ============================================================
+  // BACKEND DATA
+  // ============================================================
+
+  const userProfile = profileData?.profile || {};
+
+  const statistics =
+    profileData?.statistics || {};
+
+  const latestResume =
+    profileData?.latest_resume || null;
+
+  const bestJobMatch =
+    profileData?.best_job_match || null;
+
+  // ============================================================
+  // USER INFORMATION
+  // ============================================================
+
   const name = getValue(
-    profile?.full_name,
-    profile?.name,
-    profile?.username,
+    userProfile.full_name,
     "Candidate"
   );
 
   const email = getValue(
-    profile?.email,
-    "candidate1@example.com"
+    userProfile.email,
+    "Not available"
   );
 
   const role = getValue(
-    profile?.role,
+    userProfile.role,
     "candidate"
   );
 
   const userId = getValue(
-    profile?.id,
-    profile?.user_id,
+    userProfile.id,
     "—"
   );
 
-  const phone = getValue(
-    profile?.phone,
-    profile?.phone_number,
-    "Not added"
+  const isActive =
+    userProfile.is_active === false
+      ? false
+      : true;
+
+  // ============================================================
+  // INFORMATION NOT CURRENTLY PROVIDED BY BACKEND
+  // ============================================================
+
+  const phone = "Not added";
+
+  const location = "Not added";
+
+  const education = "Not added";
+
+  const experience = "Not added";
+
+  const skills = [];
+
+  const bio =
+    "Your professional summary can be added when profile editing is implemented.";
+
+  // ============================================================
+  // INITIALS
+  // ============================================================
+
+  const initials =
+    String(name)
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(
+        (part) =>
+          part[0]?.toUpperCase()
+      )
+      .join("") || "C";
+
+  // ============================================================
+  // STATISTICS
+  // ============================================================
+
+  const totalResumes = getValue(
+    statistics.total_resumes,
+    0
   );
 
-  const location = getValue(
-    profile?.location,
-    profile?.city,
-    profile?.address,
-    "Not added"
+  const totalJobs = getValue(
+    statistics.total_jobs,
+    0
   );
 
-  const education = getValue(
-    profile?.education,
-    profile?.degree,
-    profile?.qualification,
-    "Not added"
+  const totalMatches = getValue(
+    statistics.total_matches,
+    0
   );
 
-  const experience = getValue(
-    profile?.experience,
-    profile?.experience_years,
-    "Not added"
+  const latestResumeScore = getValue(
+    statistics.latest_resume_score,
+    latestResume?.resume_score,
+    "Not analyzed"
   );
 
-  const skillsValue = getValue(
-    profile?.skills,
-    profile?.technical_skills,
-    []
-  );
-
-  const skills = Array.isArray(skillsValue)
-    ? skillsValue
-    : typeof skillsValue === "string"
-      ? skillsValue
-          .split(",")
-          .map((skill) => skill.trim())
-          .filter(Boolean)
-      : [];
-
-  const bio = getValue(
-    profile?.bio,
-    profile?.summary,
-    profile?.about,
-    "Add your professional summary to make your profile more informative."
-  );
-
-  const initials = String(name)
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "C";
+  // ============================================================
+  // LOGOUT
+  // ============================================================
 
   const logout = () => {
-    localStorage.removeItem("hireintel_token");
-    navigate("/login", { replace: true });
+    localStorage.removeItem(
+      "hireintel_token"
+    );
+
+    navigate("/login", {
+      replace: true,
+    });
   };
+
+  // ============================================================
+  // LOADING
+  // ============================================================
 
   if (loading) {
     return (
       <div style={styles.centerPage}>
         <div style={styles.loadingCard}>
-          <div style={styles.logoIcon}>H</div>
-          <h2>Loading Your Profile...</h2>
+          <div style={styles.logoIcon}>
+            H
+          </div>
+
+          <h2>
+            Loading Your Profile...
+          </h2>
+
           <p style={styles.muted}>
             Fetching your candidate information.
           </p>
@@ -200,18 +277,32 @@ function CandidateProfile() {
     );
   }
 
+  // ============================================================
+  // ERROR
+  // ============================================================
+
   if (error) {
     return (
       <div style={styles.centerPage}>
         <div style={styles.errorCard}>
-          <div style={styles.errorIcon}>!</div>
-          <h2>Unable to Load Profile</h2>
-          <p style={styles.muted}>{error}</p>
+          <div style={styles.errorIcon}>
+            !
+          </div>
+
+          <h2>
+            Unable to Load Profile
+          </h2>
+
+          <p style={styles.muted}>
+            {error}
+          </p>
 
           <button
             type="button"
             style={styles.primaryButton}
-            onClick={() => window.location.reload()}
+            onClick={() =>
+              window.location.reload()
+            }
           >
             Try Again
           </button>
@@ -220,11 +311,23 @@ function CandidateProfile() {
     );
   }
 
+  // ============================================================
+  // MAIN PAGE
+  // ============================================================
+
   return (
     <div style={styles.page}>
+
+      {/* ======================================================
+          SIDEBAR
+      ====================================================== */}
+
       <aside style={styles.sidebar}>
+
         <div style={styles.logoContainer}>
-          <div style={styles.logoIcon}>H</div>
+          <div style={styles.logoIcon}>
+            H
+          </div>
 
           <div style={styles.logoText}>
             HireIntel <span>AI</span>
@@ -232,13 +335,18 @@ function CandidateProfile() {
         </div>
 
         <div style={styles.sidebarSection}>
-          <p style={styles.sidebarLabel}>CANDIDATE</p>
+
+          <p style={styles.sidebarLabel}>
+            CANDIDATE
+          </p>
 
           <NavButton
             label="Dashboard"
             icon="▦"
             onClick={() =>
-              navigate("/candidate/dashboard")
+              navigate(
+                "/candidate/dashboard"
+              )
             }
           />
 
@@ -254,7 +362,9 @@ function CandidateProfile() {
             label="My Resumes"
             icon="▤"
             onClick={() =>
-              navigate("/candidate/resumes")
+              navigate(
+                "/candidate/resumes"
+              )
             }
           />
 
@@ -262,7 +372,9 @@ function CandidateProfile() {
             label="Applications"
             icon="▣"
             onClick={() =>
-              navigate("/candidate/applications")
+              navigate(
+                "/candidate/applications"
+              )
             }
           />
 
@@ -270,7 +382,9 @@ function CandidateProfile() {
             label="Job Matches"
             icon="✦"
             onClick={() =>
-              navigate("/candidate/job-matches")
+              navigate(
+                "/candidate/job-matches"
+              )
             }
           />
 
@@ -282,11 +396,14 @@ function CandidateProfile() {
         </div>
 
         <div style={styles.sidebarBottom}>
+
           <NavButton
             label="Settings"
             icon="⚙"
             onClick={() =>
-              navigate("/candidate/settings")
+              navigate(
+                "/candidate/settings"
+              )
             }
           />
 
@@ -301,9 +418,18 @@ function CandidateProfile() {
         </div>
       </aside>
 
+      {/* ======================================================
+          MAIN CONTENT
+      ====================================================== */}
+
       <main style={styles.main}>
+
+        {/* HEADER */}
+
         <header style={styles.header}>
+
           <div>
+
             <p style={styles.eyebrow}>
               CANDIDATE PROFILE
             </p>
@@ -313,33 +439,49 @@ function CandidateProfile() {
             </h1>
 
             <p style={styles.subtitle}>
-              Manage and review the information used
-              across your HireIntel AI career journey.
+              Manage and review the information
+              used across your HireIntel AI
+              career journey.
             </p>
+
           </div>
 
           <button
             type="button"
             style={styles.primaryButton}
             onClick={() =>
-              navigate("/candidate/resumes")
+              navigate(
+                "/candidate/resumes"
+              )
             }
           >
             Manage Resume →
           </button>
+
         </header>
 
+        {/* ====================================================
+            PROFILE HERO
+        ==================================================== */}
+
         <section style={styles.profileHero}>
+
           <div style={styles.avatar}>
             {initials}
           </div>
 
           <div style={styles.heroInfo}>
-            <h2>{name}</h2>
 
-            <p>{email}</p>
+            <h2 style={styles.heroName}>
+              {name}
+            </h2>
+
+            <p style={styles.heroEmail}>
+              {email}
+            </p>
 
             <div style={styles.heroTags}>
+
               <span style={styles.roleBadge}>
                 {String(role).toUpperCase()}
               </span>
@@ -347,26 +489,95 @@ function CandidateProfile() {
               <span style={styles.idBadge}>
                 User ID: {userId}
               </span>
+
+              <span
+                style={
+                  isActive
+                    ? styles.activeBadge
+                    : styles.inactiveBadge
+                }
+              >
+                {isActive
+                  ? "ACTIVE"
+                  : "INACTIVE"}
+              </span>
+
             </div>
+
           </div>
         </section>
 
+        {/* ====================================================
+            STATISTICS
+        ==================================================== */}
+
+        <section style={styles.statsGrid}>
+
+          <StatCard
+            label="Total Resumes"
+            value={totalResumes}
+            icon="▤"
+          />
+
+          <StatCard
+            label="Job Matches"
+            value={totalMatches}
+            icon="✦"
+          />
+
+          <StatCard
+            label="Jobs"
+            value={totalJobs}
+            icon="▣"
+          />
+
+          <StatCard
+            label="Resume Score"
+            value={
+              latestResumeScore ===
+              "Not analyzed"
+                ? "—"
+                : `${latestResumeScore}%`
+            }
+            icon="◎"
+          />
+
+        </section>
+
+        {/* ====================================================
+            INFORMATION GRID
+        ==================================================== */}
+
         <section style={styles.grid}>
+
+          {/* PERSONAL INFORMATION */}
+
           <div style={styles.card}>
+
             <div style={styles.cardHeader}>
+
               <div>
-                <p style={styles.cardEyebrow}>
+
+                <p
+                  style={
+                    styles.cardEyebrow
+                  }
+                >
                   PERSONAL INFORMATION
                 </p>
 
-                <h2 style={styles.cardTitle}>
+                <h2
+                  style={styles.cardTitle}
+                >
                   Contact Details
                 </h2>
+
               </div>
 
               <div style={styles.cardIcon}>
                 ♙
               </div>
+
             </div>
 
             <InfoRow
@@ -388,23 +599,37 @@ function CandidateProfile() {
               label="Location"
               value={location}
             />
+
           </div>
 
+          {/* CAREER INFORMATION */}
+
           <div style={styles.card}>
+
             <div style={styles.cardHeader}>
+
               <div>
-                <p style={styles.cardEyebrow}>
+
+                <p
+                  style={
+                    styles.cardEyebrow
+                  }
+                >
                   CAREER INFORMATION
                 </p>
 
-                <h2 style={styles.cardTitle}>
+                <h2
+                  style={styles.cardTitle}
+                >
                   Professional Details
                 </h2>
+
               </div>
 
               <div style={styles.cardIcon}>
                 ✦
               </div>
+
             </div>
 
             <InfoRow
@@ -426,50 +651,353 @@ function CandidateProfile() {
               label="Candidate ID"
               value={userId}
             />
+
           </div>
+
         </section>
 
+        {/* ====================================================
+            LATEST RESUME
+        ==================================================== */}
+
         <section style={styles.card}>
+
           <div style={styles.cardHeader}>
+
             <div>
-              <p style={styles.cardEyebrow}>
+
+              <p
+                style={
+                  styles.cardEyebrow
+                }
+              >
+                RESUME INFORMATION
+              </p>
+
+              <h2
+                style={styles.cardTitle}
+              >
+                Latest Resume
+              </h2>
+
+            </div>
+
+            <div style={styles.cardIcon}>
+              📄
+            </div>
+
+          </div>
+
+          {latestResume ? (
+
+            <div style={styles.resumeBox}>
+
+              <div style={styles.resumeIcon}>
+                📄
+              </div>
+
+              <div
+                style={styles.resumeInfo}
+              >
+
+                <strong>
+                  {latestResume.filename ||
+                    "Resume"}
+                </strong>
+
+                <span>
+                  Resume ID:{" "}
+                  {latestResume.resume_id ??
+                    "—"}
+                </span>
+
+                <span>
+                  File Type:{" "}
+                  {latestResume.file_type ||
+                    "—"}
+                </span>
+
+              </div>
+
+              <div
+                style={styles.resumeScore}
+              >
+
+                <span>
+                  Resume Score
+                </span>
+
+                <strong>
+                  {latestResumeScore ===
+                  "Not analyzed"
+                    ? "Not analyzed"
+                    : `${latestResumeScore}%`}
+                </strong>
+
+              </div>
+
+            </div>
+
+          ) : (
+
+            <div style={styles.emptyBox}>
+
+              <strong>
+                No resume uploaded
+              </strong>
+
+              <p>
+                Upload a resume to enable
+                resume analysis and AI job
+                matching.
+              </p>
+
+              <button
+                type="button"
+                style={styles.outlineButton}
+                onClick={() =>
+                  navigate(
+                    "/candidate/resumes"
+                  )
+                }
+              >
+                Upload Resume
+              </button>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* ====================================================
+            BEST JOB MATCH
+        ==================================================== */}
+
+        <section style={styles.card}>
+
+          <div style={styles.cardHeader}>
+
+            <div>
+
+              <p
+                style={
+                  styles.cardEyebrow
+                }
+              >
+                AI CAREER INTELLIGENCE
+              </p>
+
+              <h2
+                style={styles.cardTitle}
+              >
+                Best Job Match
+              </h2>
+
+            </div>
+
+            <div style={styles.cardIcon}>
+              ✦
+            </div>
+
+          </div>
+
+          {bestJobMatch ? (
+
+            <div style={styles.matchBox}>
+
+              <div>
+
+                <p
+                  style={
+                    styles.matchCompany
+                  }
+                >
+                  {bestJobMatch.company_name ||
+                    "Company"}
+                </p>
+
+                <h3
+                  style={
+                    styles.matchTitle
+                  }
+                >
+                  {bestJobMatch.job_title ||
+                    "Job"}
+                </h3>
+
+                <p
+                  style={
+                    styles.matchId
+                  }
+                >
+                  Job ID:{" "}
+                  {bestJobMatch.job_id ??
+                    "—"}
+                </p>
+
+              </div>
+
+              <div
+                style={styles.matchScore}
+              >
+
+                <span>
+                  AI Match
+                </span>
+
+                <strong>
+                  {bestJobMatch.match_score !=
+                  null
+                    ? `${Number(
+                        bestJobMatch.match_score
+                      ).toFixed(2)}%`
+                    : "—"}
+                </strong>
+
+              </div>
+
+              <div
+                style={
+                  styles.experienceScore
+                }
+              >
+
+                <span>
+                  Experience Match
+                </span>
+
+                <strong>
+                  {bestJobMatch.experience_match !=
+                  null
+                    ? `${Number(
+                        bestJobMatch.experience_match
+                      ).toFixed(0)}%`
+                    : "—"}
+                </strong>
+
+              </div>
+
+              <button
+                type="button"
+                style={styles.outlineButton}
+                onClick={() =>
+                  navigate(
+                    `/candidate/jobs/${bestJobMatch.job_id}`
+                  )
+                }
+              >
+                View Job
+              </button>
+
+            </div>
+
+          ) : (
+
+            <div style={styles.emptyBox}>
+
+              <strong>
+                No job matches yet
+              </strong>
+
+              <p>
+                Upload and analyze your resume
+                to generate AI-powered job
+                matches.
+              </p>
+
+              <button
+                type="button"
+                style={styles.outlineButton}
+                onClick={() =>
+                  navigate(
+                    "/candidate/jobs"
+                  )
+                }
+              >
+                Find Jobs
+              </button>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* ====================================================
+            PROFESSIONAL SUMMARY
+        ==================================================== */}
+
+        <section style={styles.card}>
+
+          <div style={styles.cardHeader}>
+
+            <div>
+
+              <p
+                style={
+                  styles.cardEyebrow
+                }
+              >
                 PROFESSIONAL SUMMARY
               </p>
 
-              <h2 style={styles.cardTitle}>
+              <h2
+                style={styles.cardTitle}
+              >
                 About Me
               </h2>
+
             </div>
 
             <div style={styles.cardIcon}>
               ✎
             </div>
+
           </div>
 
           <p style={styles.bio}>
             {bio}
           </p>
+
         </section>
 
+        {/* ====================================================
+            SKILLS
+        ==================================================== */}
+
         <section style={styles.card}>
+
           <div style={styles.cardHeader}>
+
             <div>
-              <p style={styles.cardEyebrow}>
+
+              <p
+                style={
+                  styles.cardEyebrow
+                }
+              >
                 TECHNICAL PROFILE
               </p>
 
-              <h2 style={styles.cardTitle}>
+              <h2
+                style={styles.cardTitle}
+              >
                 Skills
               </h2>
+
             </div>
 
             <div style={styles.cardIcon}>
               #
             </div>
+
           </div>
 
           {skills.length > 0 ? (
+
             <div style={styles.skillList}>
+
               {skills.map((skill) => (
                 <span
                   key={String(skill)}
@@ -478,27 +1006,47 @@ function CandidateProfile() {
                   {String(skill)}
                 </span>
               ))}
+
             </div>
+
           ) : (
+
             <div style={styles.emptySkills}>
+
               <span>✦</span>
+
               <div>
-                <strong>No skills listed yet</strong>
+
+                <strong>
+                  No profile skills added yet
+                </strong>
+
                 <p>
-                  Your resume skills can be used to
-                  improve AI job matching.
+                  Your resume skills are
+                  already used by HireIntel AI
+                  for job matching.
                 </p>
+
               </div>
+
             </div>
+
           )}
+
         </section>
 
+        {/* ====================================================
+            FINAL INSIGHT
+        ==================================================== */}
+
         <section style={styles.insightCard}>
+
           <div style={styles.insightIcon}>
             ✦
           </div>
 
           <div style={styles.insightContent}>
+
             <p style={styles.insightLabel}>
               HIREINTEL AI
             </p>
@@ -507,29 +1055,38 @@ function CandidateProfile() {
               Keep your career profile updated
             </h3>
 
-            <p>
-              Your profile and resume information
-              support job discovery, application
-              tracking and AI matching. Keep your
-              latest education, skills and experience
-              available for better career insights.
+            <p style={styles.insightText}>
+              Your profile, resume and AI
+              matching information work
+              together to support job
+              discovery and application
+              tracking.
             </p>
+
           </div>
 
           <button
             type="button"
             style={styles.outlineButton}
             onClick={() =>
-              navigate("/candidate/job-matches")
+              navigate(
+                "/candidate/job-matches"
+              )
             }
           >
             View Job Matches
           </button>
+
         </section>
+
       </main>
     </div>
   );
 }
+
+// ============================================================
+// NAV BUTTON
+// ============================================================
 
 function NavButton({
   label,
@@ -542,7 +1099,9 @@ function NavButton({
       type="button"
       style={{
         ...styles.navItem,
-        ...(active ? styles.activeNavItem : {}),
+        ...(active
+          ? styles.activeNavItem
+          : {}),
       }}
       onClick={onClick}
     >
@@ -552,19 +1111,61 @@ function NavButton({
   );
 }
 
+// ============================================================
+// INFO ROW
+// ============================================================
+
 function InfoRow({ label, value }) {
   return (
     <div style={styles.infoRow}>
+
       <span style={styles.infoLabel}>
         {label}
       </span>
 
       <strong style={styles.infoValue}>
-        {String(value)}
+        {String(value ?? "—")}
       </strong>
+
     </div>
   );
 }
+
+// ============================================================
+// STAT CARD
+// ============================================================
+
+function StatCard({
+  label,
+  value,
+  icon,
+}) {
+  return (
+    <div style={styles.statCard}>
+
+      <div style={styles.statIcon}>
+        {icon}
+      </div>
+
+      <div>
+
+        <p style={styles.statLabel}>
+          {label}
+        </p>
+
+        <strong style={styles.statValue}>
+          {value}
+        </strong>
+
+      </div>
+
+    </div>
+  );
+}
+
+// ============================================================
+// STYLES
+// ============================================================
 
 const styles = {
   page: {
@@ -580,7 +1181,8 @@ const styles = {
     width: "250px",
     minHeight: "100vh",
     background: "#ffffff",
-    borderRight: "1px solid #e8eaf0",
+    borderRight:
+      "1px solid #e8eaf0",
     display: "flex",
     flexDirection: "column",
     padding: "28px 18px",
@@ -652,7 +1254,8 @@ const styles = {
   },
 
   sidebarBottom: {
-    borderTop: "1px solid #eeeeee",
+    borderTop:
+      "1px solid #eeeeee",
     paddingTop: "18px",
   },
 
@@ -719,7 +1322,8 @@ const styles = {
   },
 
   outlineButton: {
-    border: "1px solid #dcd7f8",
+    border:
+      "1px solid #dcd7f8",
     background: "#ffffff",
     color: "#6657e8",
     padding: "11px 16px",
@@ -732,7 +1336,8 @@ const styles = {
   profileHero: {
     background:
       "linear-gradient(135deg, #f0edff, #ffffff)",
-    border: "1px solid #e2dcff",
+    border:
+      "1px solid #e2dcff",
     borderRadius: "20px",
     padding: "30px",
     display: "flex",
@@ -760,6 +1365,16 @@ const styles = {
     flex: 1,
   },
 
+  heroName: {
+    margin: "0 0 6px",
+    fontSize: "25px",
+  },
+
+  heroEmail: {
+    margin: 0,
+    color: "#747b8c",
+    fontSize: "14px",
+  },
 
   heroTags: {
     display: "flex",
@@ -780,11 +1395,72 @@ const styles = {
   idBadge: {
     background: "#ffffff",
     color: "#747b8c",
-    border: "1px solid #e0dced",
+    border:
+      "1px solid #e0dced",
     borderRadius: "20px",
     padding: "6px 10px",
     fontSize: "10px",
     fontWeight: "700",
+  },
+
+  activeBadge: {
+    background: "#e9f9ef",
+    color: "#21894e",
+    borderRadius: "20px",
+    padding: "6px 10px",
+    fontSize: "10px",
+    fontWeight: "800",
+  },
+
+  inactiveBadge: {
+    background: "#fff0f0",
+    color: "#c53f3f",
+    borderRadius: "20px",
+    padding: "6px 10px",
+    fontSize: "10px",
+    fontWeight: "800",
+  },
+
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(4, minmax(0, 1fr))",
+    gap: "18px",
+    marginBottom: "22px",
+  },
+
+  statCard: {
+    background: "#ffffff",
+    border:
+      "1px solid #e8eaf0",
+    borderRadius: "16px",
+    padding: "20px",
+    display: "flex",
+    alignItems: "center",
+    gap: "15px",
+  },
+
+  statIcon: {
+    width: "45px",
+    height: "45px",
+    borderRadius: "13px",
+    background: "#f0edff",
+    color: "#6657e8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: "800",
+    fontSize: "18px",
+  },
+
+  statLabel: {
+    margin: "0 0 5px",
+    color: "#858b9b",
+    fontSize: "12px",
+  },
+
+  statValue: {
+    fontSize: "24px",
   },
 
   grid: {
@@ -792,12 +1468,12 @@ const styles = {
     gridTemplateColumns:
       "repeat(2, minmax(0, 1fr))",
     gap: "20px",
-    marginBottom: "20px",
   },
 
   card: {
     background: "#ffffff",
-    border: "1px solid #e8eaf0",
+    border:
+      "1px solid #e8eaf0",
     borderRadius: "18px",
     padding: "25px",
     marginBottom: "20px",
@@ -805,7 +1481,8 @@ const styles = {
 
   cardHeader: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "flex-start",
     marginBottom: "18px",
   },
@@ -837,11 +1514,13 @@ const styles = {
 
   infoRow: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
     gap: "20px",
     padding: "14px 0",
-    borderBottom: "1px solid #eef0f4",
+    borderBottom:
+      "1px solid #eef0f4",
   },
 
   infoLabel: {
@@ -854,6 +1533,114 @@ const styles = {
     fontSize: "13px",
     maxWidth: "65%",
     overflowWrap: "anywhere",
+  },
+
+  resumeBox: {
+    display: "flex",
+    alignItems: "center",
+    gap: "16px",
+    padding: "18px",
+    background: "#f8f7fc",
+    borderRadius: "14px",
+  },
+
+  resumeIcon: {
+    width: "48px",
+    height: "48px",
+    borderRadius: "12px",
+    background: "#f0edff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "21px",
+  },
+
+  resumeInfo: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    flex: 1,
+  },
+
+  resumeInfoStrong: {
+    fontSize: "14px",
+  },
+
+  resumeInfoSpan: {
+    fontSize: "12px",
+    color: "#818899",
+  },
+
+  resumeScore: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-end",
+    gap: "4px",
+  },
+
+  resumeScoreSpan: {
+    fontSize: "11px",
+    color: "#858b9b",
+  },
+
+  resumeScoreStrong: {
+    color: "#6657e8",
+    fontSize: "20px",
+  },
+
+  emptyBox: {
+    background: "#f8f7fc",
+    borderRadius: "14px",
+    padding: "25px",
+  },
+
+  emptyBoxP: {
+    color: "#747b8c",
+    fontSize: "13px",
+    lineHeight: "1.6",
+  },
+
+  matchBox: {
+    background:
+      "linear-gradient(135deg, #f5f2ff, #ffffff)",
+    border:
+      "1px solid #e2dcff",
+    borderRadius: "14px",
+    padding: "20px",
+    display: "grid",
+    gridTemplateColumns:
+      "1fr auto auto auto",
+    alignItems: "center",
+    gap: "25px",
+  },
+
+  matchCompany: {
+    margin: "0 0 4px",
+    color: "#7b8292",
+    fontSize: "12px",
+  },
+
+  matchTitle: {
+    margin: 0,
+    fontSize: "20px",
+  },
+
+  matchId: {
+    margin: "5px 0 0",
+    color: "#858b9b",
+    fontSize: "11px",
+  },
+
+  matchScore: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+  },
+
+  experienceScore: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
   },
 
   bio: {
@@ -891,7 +1678,8 @@ const styles = {
   insightCard: {
     background:
       "linear-gradient(135deg, #f4f1ff, #ffffff)",
-    border: "1px solid #e2dcff",
+    border:
+      "1px solid #e2dcff",
     borderRadius: "18px",
     padding: "23px",
     display: "flex",
@@ -916,11 +1704,11 @@ const styles = {
     margin: "0 0 5px",
   },
 
-
   insightText: {
     color: "#747b8c",
     fontSize: "13px",
     lineHeight: "1.6",
+    margin: 0,
   },
 
   centerPage: {
@@ -934,7 +1722,8 @@ const styles = {
 
   loadingCard: {
     background: "#fff",
-    border: "1px solid #e8eaf0",
+    border:
+      "1px solid #e8eaf0",
     borderRadius: "20px",
     padding: "50px",
     textAlign: "center",
@@ -944,7 +1733,8 @@ const styles = {
 
   errorCard: {
     background: "#fff",
-    border: "1px solid #ffd7d7",
+    border:
+      "1px solid #ffd7d7",
     borderRadius: "20px",
     padding: "45px",
     textAlign: "center",
