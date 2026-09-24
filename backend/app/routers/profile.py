@@ -1,9 +1,4 @@
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-)
-
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -32,11 +27,13 @@ router = APIRouter(
 
 @router.get("/me")
 def get_my_profile(
-    current_user: User = Depends(
-        get_current_user
-    ),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """
+    Return the currently logged-in user's profile,
+    statistics, latest resume and best job match.
+    """
 
     # ========================================================
     # FIND USER
@@ -44,14 +41,11 @@ def get_my_profile(
 
     user = (
         db.query(User)
-        .filter(
-            User.id == current_user.id
-        )
+        .filter(User.id == current_user.id)
         .first()
     )
 
     if user is None:
-
         raise HTTPException(
             status_code=404,
             detail="User not found.",
@@ -94,7 +88,7 @@ def get_my_profile(
     )
 
     # ========================================================
-    # GET LATEST RESUME
+    # LATEST RESUME
     # ========================================================
 
     latest_resume = (
@@ -109,19 +103,19 @@ def get_my_profile(
     )
 
     latest_resume_data = None
-
     latest_resume_score = None
 
     if latest_resume:
 
+        # ====================================================
+        # LATEST RESUME ANALYSIS
+        # ====================================================
+
         latest_analysis = (
             db.query(ResumeAnalysis)
             .filter(
-                ResumeAnalysis.resume_id
-                == latest_resume.id,
-
-                ResumeAnalysis.user_id
-                == user.id,
+                ResumeAnalysis.resume_id == latest_resume.id,
+                ResumeAnalysis.user_id == user.id,
             )
             .order_by(
                 ResumeAnalysis.analyzed_at.desc()
@@ -129,37 +123,29 @@ def get_my_profile(
             .first()
         )
 
-        if latest_analysis:
+        # ====================================================
+        # RESUME DATA
+        # ====================================================
 
+        latest_resume_data = {
+            "resume_id": latest_resume.id,
+            "filename": latest_resume.original_filename,
+            "file_type": latest_resume.file_type,
+            "uploaded_at": latest_resume.uploaded_at,
+            "resume_score": (
+                latest_analysis.resume_score
+                if latest_analysis
+                else None
+            ),
+        }
+
+        if latest_analysis:
             latest_resume_score = (
                 latest_analysis.resume_score
             )
 
-            latest_resume_data = {
-
-                "resume_id": (
-                    latest_resume.id
-                ),
-
-                "filename": (
-                    latest_resume.original_filename
-                ),
-
-                "file_type": (
-                    latest_resume.file_type
-                ),
-
-                "uploaded_at": (
-                    latest_resume.uploaded_at
-                ),
-
-                "resume_score": (
-                    latest_analysis.resume_score
-                ),
-            }
-
     # ========================================================
-    # GET BEST JOB MATCH
+    # BEST JOB MATCH
     # ========================================================
 
     best_match = (
@@ -186,14 +172,9 @@ def get_my_profile(
         )
 
         best_match_data = {
+            "match_id": best_match.id,
 
-            "match_id": (
-                best_match.id
-            ),
-
-            "job_id": (
-                best_match.job_id
-            ),
+            "job_id": best_match.job_id,
 
             "job_title": (
                 job.job_title
@@ -207,9 +188,7 @@ def get_my_profile(
                 else None
             ),
 
-            "match_score": (
-                best_match.match_score
-            ),
+            "match_score": best_match.match_score,
 
             "experience_match": (
                 best_match.experience_match
@@ -217,48 +196,27 @@ def get_my_profile(
         }
 
     # ========================================================
-    # FINAL RESPONSE
+    # PROFILE RESPONSE
     # ========================================================
 
     return {
-
         "profile": {
-
             "id": user.id,
-
-            "full_name": (
-                user.full_name
-            ),
-
+            "full_name": user.full_name,
             "email": user.email,
-
             "role": user.role,
+            "is_active": user.is_active,
+            "created_at": user.created_at,
         },
 
         "statistics": {
-
-            "total_resumes": (
-                total_resumes
-            ),
-
-            "total_jobs": (
-                total_jobs
-            ),
-
-            "total_matches": (
-                total_matches
-            ),
-
-            "latest_resume_score": (
-                latest_resume_score
-            ),
+            "total_resumes": total_resumes,
+            "total_jobs": total_jobs,
+            "total_matches": total_matches,
+            "latest_resume_score": latest_resume_score,
         },
 
-        "latest_resume": (
-            latest_resume_data
-        ),
+        "latest_resume": latest_resume_data,
 
-        "best_job_match": (
-            best_match_data
-        ),
+        "best_job_match": best_match_data,
     }
