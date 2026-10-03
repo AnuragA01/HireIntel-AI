@@ -388,10 +388,121 @@ function CandidateDashboard() {
     dashboard?.applications ||
     [];
 
-  const jobMatches =
-    dashboard?.job_matches ||
-    dashboard?.matches ||
-    [];
+  /*
+    ============================================================
+    AI JOB MATCHES
+    ============================================================
+
+    The backend may return duplicate JobMatch records for the
+    same job. The dashboard should never display the same job
+    more than once.
+
+    Rules:
+    1. Read both job_matches and matches when available.
+    2. Combine the records.
+    3. Identify the job using job_id.
+    4. If the same job appears multiple times, keep the
+       record with the highest match score.
+    5. Sort the final list from highest score to lowest score.
+  */
+
+  const dashboardJobMatches = Array.isArray(
+    dashboard?.job_matches
+  )
+    ? dashboard.job_matches
+    : [];
+
+  const dashboardMatches = Array.isArray(
+    dashboard?.matches
+  )
+    ? dashboard.matches
+    : [];
+
+  const rawJobMatches = [
+    ...dashboardJobMatches,
+    ...dashboardMatches,
+  ];
+
+  const jobMatchMap = new Map();
+
+  rawJobMatches.forEach((match) => {
+    if (!match || typeof match !== "object") {
+      return;
+    }
+
+    const jobId =
+      match?.job_id ??
+      match?.job?.id ??
+      match?.id;
+
+    if (
+      jobId === undefined ||
+      jobId === null ||
+      jobId === ""
+    ) {
+      return;
+    }
+
+    const key = String(jobId);
+
+    const currentScore = Number(
+      match?.match_score ??
+        match?.score ??
+        match?.match_percentage ??
+        0
+    );
+
+    const safeCurrentScore =
+      Number.isFinite(currentScore)
+        ? currentScore
+        : 0;
+
+    const existing = jobMatchMap.get(key);
+
+    if (!existing) {
+      jobMatchMap.set(key, match);
+      return;
+    }
+
+    const existingScore = Number(
+      existing?.match_score ??
+        existing?.score ??
+        existing?.match_percentage ??
+        0
+    );
+
+    const safeExistingScore =
+      Number.isFinite(existingScore)
+        ? existingScore
+        : 0;
+
+    if (safeCurrentScore > safeExistingScore) {
+      jobMatchMap.set(key, match);
+    }
+  });
+
+  const jobMatches = Array.from(
+    jobMatchMap.values()
+  ).sort((a, b) => {
+    const scoreA = Number(
+      a?.match_score ??
+        a?.score ??
+        a?.match_percentage ??
+        0
+    );
+
+    const scoreB = Number(
+      b?.match_score ??
+        b?.score ??
+        b?.match_percentage ??
+        0
+    );
+
+    return (
+      (Number.isFinite(scoreB) ? scoreB : 0) -
+      (Number.isFinite(scoreA) ? scoreA : 0)
+    );
+  });
 
   return (
     <div style={styles.page}>

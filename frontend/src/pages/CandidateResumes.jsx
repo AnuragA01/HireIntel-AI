@@ -1,37 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 
-/*
-  Fetch the candidate's resumes.
 
-  This helper does not call React setState.
-  That is important because calling a function that
-  immediately calls setState from inside useEffect can
-  trigger the React Hooks lint warning shown in VS Code.
-*/
-async function fetchMyResumes(token) {
-  const response = await fetch(
-    `${API_BASE_URL}/resumes/my-resumes`,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-    }
-  );
+/* ============================================================
+   ERROR MESSAGE HELPER
+============================================================ */
 
-  const data = await response.json().catch(() => null);
-
-  return {
-    response,
-    data,
-  };
-}
-
-function getErrorMessage(data, fallback) {
+function getErrorMessage(
+  data,
+  fallback = "Something went wrong."
+) {
   if (typeof data?.detail === "string") {
     return data.detail;
   }
@@ -52,13 +32,10 @@ function getErrorMessage(data, fallback) {
       .join(", ");
   }
 
-  if (
-    data?.detail &&
-    typeof data.detail === "object"
-  ) {
+  if (data?.detail) {
     return (
-      data.detail.message ||
-      data.detail.error ||
+      data.detail?.message ||
+      data.detail?.error ||
       JSON.stringify(data.detail)
     );
   }
@@ -66,272 +43,432 @@ function getErrorMessage(data, fallback) {
   return fallback;
 }
 
+
+/* ============================================================
+   NORMALIZE RESUME DATA
+============================================================ */
+
+function normalizeResumes(data) {
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  return data.map((resume) => {
+    let score = null;
+
+    /*
+      Backend format:
+
+      ai_score: 100
+
+      OR
+
+      analysis:
+      {
+        score: 100
+      }
+    */
+
+    if (
+      resume?.ai_score !== null &&
+      resume?.ai_score !== undefined &&
+      resume?.ai_score !== ""
+    ) {
+      score = Number(resume.ai_score);
+    } else if (
+      resume?.analysis?.score !== null &&
+      resume?.analysis?.score !== undefined &&
+      resume?.analysis?.score !== ""
+    ) {
+      score = Number(
+        resume.analysis.score
+      );
+    }
+
+    return {
+      ...resume,
+
+      ai_score:
+        Number.isFinite(score)
+          ? score
+          : null,
+    };
+  });
+}
+
+
+/* ============================================================
+   CANDIDATE RESUMES
+============================================================ */
+
 function CandidateResumes() {
   const navigate = useNavigate();
-  const fileInputRef = useRef(null);
 
   const [resumes, setResumes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
-  /*
-    Load resumes when the page opens.
+  const [loading, setLoading] =
+    useState(true);
 
-    The async work happens inside the effect.
-    There is no synchronous setState call caused by
-    calling another state-changing function from the effect.
-  */
-  useEffect(() => {
-    let cancelled = false;
+  const [uploading, setUploading] =
+    useState(false);
 
-    const loadResumes = async () => {
-      const token = localStorage.getItem(
+  const [deletingId, setDeletingId] =
+    useState(null);
+
+  const [error, setError] =
+    useState("");
+
+  const [success, setSuccess] =
+    useState("");
+
+
+  /* ==========================================================
+     FETCH RESUMES
+     
+     IMPORTANT:
+     This function ONLY fetches data.
+     It does NOT call setState.
+
+     This prevents the React cascading-render warning.
+  ========================================================== */
+
+  const fetchResumes = async () => {
+    const token =
+      localStorage.getItem(
         "hireintel_token"
       );
 
-      if (!token) {
-        navigate("/login", {
-          replace: true,
-        });
-        return;
-      }
+    if (!token) {
+      throw new Error(
+        "AUTHENTICATION_REQUIRED"
+      );
+    }
 
-      try {
-        const { response, data } =
-          await fetchMyResumes(token);
+    const response =
+      await fetch(
+        `${API_BASE_URL}/resumes/my-resumes`,
+        {
+          method: "GET",
 
-        if (cancelled) {
-          return;
+          headers: {
+            Authorization:
+              `Bearer ${token}`,
+
+            Accept:
+              "application/json",
+          },
         }
+      );
 
-        if (response.status === 401) {
-          localStorage.removeItem(
-            "hireintel_token"
+
+    const data =
+      await response
+        .json()
+        .catch(() => []);
+
+
+    /* --------------------------------------------------------
+       TOKEN EXPIRED
+    -------------------------------------------------------- */
+
+    if (response.status === 401) {
+      throw new Error(
+        "AUTHENTICATION_REQUIRED"
+      );
+    }
+
+
+    /* --------------------------------------------------------
+       API ERROR
+    -------------------------------------------------------- */
+
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(
+          data,
+          "Unable to load your resumes."
+        )
+      );
+    }
+
+
+    /* --------------------------------------------------------
+       RETURN NORMALIZED DATA
+    -------------------------------------------------------- */
+
+    return normalizeResumes(
+      data
+    );
+  };
+
+
+  /* ==========================================================
+     INITIAL LOAD
+
+     The async function is INSIDE useEffect.
+
+     No external function dependency warning.
+     No direct synchronous setState before the request.
+  ========================================================== */
+
+  useEffect(() => {
+    let cancelled = false;
+
+
+    const loadInitialResumes =
+      async () => {
+        try {
+          const resumeList =
+            await fetchResumes();
+
+
+          if (cancelled) {
+            return;
+          }
+
+
+          setResumes(
+            resumeList
           );
 
-          navigate("/login", {
-            replace: true,
-          });
+        } catch (loadError) {
+          if (cancelled) {
+            return;
+          }
 
-          return;
-        }
 
-        if (!response.ok) {
-          throw new Error(
-            getErrorMessage(
-              data,
-              "Unable to load your resumes."
-            )
+          console.error(
+            "Load resumes error:",
+            loadError
           );
+
+
+          if (
+            loadError?.message ===
+            "AUTHENTICATION_REQUIRED"
+          ) {
+            localStorage.removeItem(
+              "hireintel_token"
+            );
+
+            localStorage.removeItem(
+              "hireintel_role"
+            );
+
+            localStorage.removeItem(
+              "hireintel_user_id"
+            );
+
+            localStorage.removeItem(
+              "hireintel_email"
+            );
+
+            navigate(
+              "/login",
+              {
+                replace: true,
+              }
+            );
+
+            return;
+          }
+
+
+          setError(
+            loadError?.message ||
+              "Unable to connect to the HireIntel AI server."
+          );
+
+        } finally {
+          if (!cancelled) {
+            setLoading(false);
+          }
         }
+      };
 
-        setResumes(
-          Array.isArray(data) ? data : []
-        );
-      } catch (requestError) {
-        if (cancelled) {
-          return;
-        }
 
-        console.error(
-          "Resume loading error:",
-          requestError
-        );
+    loadInitialResumes();
 
-        setError(
-          requestError?.message ||
-            "Unable to connect to the HireIntel AI server."
-        );
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadResumes();
 
     return () => {
       cancelled = true;
     };
+
   }, [navigate]);
 
-  /*
-    Refresh the resume list after uploading.
-    This function is NOT called directly by useEffect,
-    so it can safely update loading/error state here.
-  */
-  const refreshResumes = async () => {
-    const token = localStorage.getItem(
-      "hireintel_token"
-    );
 
-    if (!token) {
-      navigate("/login", {
-        replace: true,
-      });
+  /* ==========================================================
+     UPLOAD RESUME
+  ========================================================== */
 
-      return;
-    }
+  const handleUpload = async (
+    event
+  ) => {
+    const file =
+      event.target.files?.[0];
 
-    try {
-      setLoading(true);
-      setError("");
-
-      const { response, data } =
-        await fetchMyResumes(token);
-
-      if (response.status === 401) {
-        localStorage.removeItem(
-          "hireintel_token"
-        );
-
-        navigate("/login", {
-          replace: true,
-        });
-
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          getErrorMessage(
-            data,
-            "Unable to load your resumes."
-          )
-        );
-      }
-
-      setResumes(
-        Array.isArray(data) ? data : []
-      );
-    } catch (requestError) {
-      console.error(
-        "Resume refresh error:",
-        requestError
-      );
-
-      setError(
-        requestError?.message ||
-          "Unable to load your resumes."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFileChange = async (event) => {
-    const file = event.target.files?.[0];
 
     /*
-      Clear the input so the user can select the same
-      file again after a failed upload.
+      Allow selecting the same file again.
     */
+
     event.target.value = "";
+
 
     if (!file) {
       return;
     }
 
-    setError("");
-    setSuccess("");
+
+    /* --------------------------------------------------------
+       CHECK LOGIN
+    -------------------------------------------------------- */
+
+    const token =
+      localStorage.getItem(
+        "hireintel_token"
+      );
+
+
+    if (!token) {
+      navigate(
+        "/login",
+        {
+          replace: true,
+        }
+      );
+
+      return;
+    }
+
+
+    /* --------------------------------------------------------
+       CHECK PDF
+    -------------------------------------------------------- */
 
     const fileName =
       file.name.toLowerCase();
 
-    const isPdf =
-      fileName.endsWith(".pdf");
 
-    const isDocx =
-      fileName.endsWith(".docx");
-
-    if (!isPdf && !isDocx) {
+    if (
+      !fileName.endsWith(".pdf")
+    ) {
       setError(
-        "Please upload a PDF or DOCX resume."
+        "Only PDF resumes are supported."
       );
 
+      setSuccess("");
+
       return;
     }
 
-    /*
-      PDF is the reliable format in the current
-      Windows backend environment.
 
-      DOCX parsing can fail because of the lxml
-      DLL/Application Control issue encountered
-      during this project.
-    */
-    if (isDocx) {
+    /* --------------------------------------------------------
+       CHECK FILE SIZE
+       10 MB
+    -------------------------------------------------------- */
+
+    const maxSize =
+      10 * 1024 * 1024;
+
+
+    if (file.size > maxSize) {
       setError(
-        "For the current HireIntel AI setup, please upload a PDF resume. PDF parsing is enabled and reliable."
+        "Resume file size must be 10 MB or less."
       );
 
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setError(
-        "Resume file must be 10 MB or smaller."
-      );
+      setSuccess("");
 
       return;
     }
 
-    const token = localStorage.getItem(
-      "hireintel_token"
-    );
-
-    if (!token) {
-      navigate("/login", {
-        replace: true,
-      });
-
-      return;
-    }
 
     try {
       setUploading(true);
+
       setError("");
 
-      const formData = new FormData();
+      setSuccess("");
 
-      formData.append("file", file);
 
-      /*
-        Do NOT manually set Content-Type here.
+      /* ------------------------------------------------------
+         FORM DATA
+      ------------------------------------------------------ */
 
-        The browser automatically creates:
-        multipart/form-data; boundary=...
-      */
-      const response = await fetch(
-        `${API_BASE_URL}/resumes/upload`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-          body: formData,
-        }
+      const formData =
+        new FormData();
+
+
+      formData.append(
+        "file",
+        file
       );
 
-      const data = await response
-        .json()
-        .catch(() => null);
 
-      if (response.status === 401) {
+      /* ------------------------------------------------------
+         UPLOAD
+      ------------------------------------------------------ */
+
+      const response =
+        await fetch(
+          `${API_BASE_URL}/resumes/upload`,
+          {
+            method: "POST",
+
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+            },
+
+            body: formData,
+          }
+        );
+
+
+      const data =
+        await response
+          .json()
+          .catch(() => null);
+
+
+      /* ------------------------------------------------------
+         AUTH ERROR
+      ------------------------------------------------------ */
+
+      if (
+        response.status === 401
+      ) {
         localStorage.removeItem(
           "hireintel_token"
         );
 
-        navigate("/login", {
-          replace: true,
-        });
+        localStorage.removeItem(
+          "hireintel_role"
+        );
+
+        localStorage.removeItem(
+          "hireintel_user_id"
+        );
+
+        localStorage.removeItem(
+          "hireintel_email"
+        );
+
+
+        navigate(
+          "/login",
+          {
+            replace: true,
+          }
+        );
 
         return;
       }
+
+
+      /* ------------------------------------------------------
+         UPLOAD ERROR
+      ------------------------------------------------------ */
 
       if (!response.ok) {
         throw new Error(
@@ -342,39 +479,267 @@ function CandidateResumes() {
         );
       }
 
+
+      /* ------------------------------------------------------
+         SUCCESS
+      ------------------------------------------------------ */
+
       setSuccess(
-        "Resume uploaded successfully."
+        "Resume uploaded successfully. AI analysis and job matching completed."
       );
 
+
       /*
-        Reload the list after successful upload.
+        IMPORTANT:
+
+        Do NOT trust only the POST response
+        for ai_score.
+
+        Fetch the complete resume list again.
       */
-      await refreshResumes();
+
+      const updatedResumes =
+        await fetchResumes();
+
+
+      setResumes(
+        updatedResumes
+      );
+
     } catch (uploadError) {
       console.error(
         "Resume upload error:",
         uploadError
       );
 
+
+      if (
+        uploadError?.message ===
+        "AUTHENTICATION_REQUIRED"
+      ) {
+        localStorage.removeItem(
+          "hireintel_token"
+        );
+
+        localStorage.removeItem(
+          "hireintel_role"
+        );
+
+        localStorage.removeItem(
+          "hireintel_user_id"
+        );
+
+        localStorage.removeItem(
+          "hireintel_email"
+        );
+
+
+        navigate(
+          "/login",
+          {
+            replace: true,
+          }
+        );
+
+        return;
+      }
+
+
       setError(
         uploadError?.message ||
-          "Unable to upload the resume."
+          "Unable to upload resume."
       );
+
     } finally {
       setUploading(false);
     }
   };
 
-  const formatDate = (value) => {
-    if (!value) {
-      return "Not available";
+
+  /* ==========================================================
+     DELETE RESUME
+  ========================================================== */
+
+  const handleDelete = async (
+    resumeId
+  ) => {
+    const token =
+      localStorage.getItem(
+        "hireintel_token"
+      );
+
+
+    if (!token) {
+      navigate(
+        "/login",
+        {
+          replace: true,
+        }
+      );
+
+      return;
     }
 
-    const date = new Date(value);
 
-    if (Number.isNaN(date.getTime())) {
-      return String(value);
+    const confirmed =
+      window.confirm(
+        `Are you sure you want to delete Resume #${resumeId}?`
+      );
+
+
+    if (!confirmed) {
+      return;
     }
+
+
+    try {
+      setDeletingId(
+        resumeId
+      );
+
+      setError("");
+
+      setSuccess("");
+
+
+      /* ------------------------------------------------------
+         DELETE
+      ------------------------------------------------------ */
+
+      const response =
+        await fetch(
+          `${API_BASE_URL}/resumes/${resumeId}`,
+          {
+            method: "DELETE",
+
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+
+              Accept:
+                "application/json",
+            },
+          }
+        );
+
+
+      const data =
+        await response
+          .json()
+          .catch(() => null);
+
+
+      /* ------------------------------------------------------
+         AUTH ERROR
+      ------------------------------------------------------ */
+
+      if (
+        response.status === 401
+      ) {
+        localStorage.removeItem(
+          "hireintel_token"
+        );
+
+        localStorage.removeItem(
+          "hireintel_role"
+        );
+
+        localStorage.removeItem(
+          "hireintel_user_id"
+        );
+
+        localStorage.removeItem(
+          "hireintel_email"
+        );
+
+
+        navigate(
+          "/login",
+          {
+            replace: true,
+          }
+        );
+
+        return;
+      }
+
+
+      /* ------------------------------------------------------
+         DELETE ERROR
+      ------------------------------------------------------ */
+
+      if (!response.ok) {
+        throw new Error(
+          getErrorMessage(
+            data,
+            "Unable to delete resume."
+          )
+        );
+      }
+
+
+      /* ------------------------------------------------------
+         UPDATE UI
+      ------------------------------------------------------ */
+
+      setResumes(
+        (currentResumes) =>
+          currentResumes.filter(
+            (resume) =>
+              Number(resume.id) !==
+              Number(resumeId)
+          )
+      );
+
+
+      setSuccess(
+        `Resume #${resumeId} deleted successfully.`
+      );
+
+    } catch (deleteError) {
+      console.error(
+        "Delete resume error:",
+        deleteError
+      );
+
+
+      setError(
+        deleteError?.message ||
+          "Unable to delete resume."
+      );
+
+    } finally {
+      setDeletingId(
+        null
+      );
+    }
+  };
+
+
+  /* ==========================================================
+     FORMAT DATE
+  ========================================================== */
+
+  const formatDate = (
+    dateValue
+  ) => {
+    if (!dateValue) {
+      return "—";
+    }
+
+
+    const date =
+      new Date(dateValue);
+
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return "—";
+    }
+
 
     return date.toLocaleDateString(
       "en-IN",
@@ -386,897 +751,1103 @@ function CandidateResumes() {
     );
   };
 
-  const getScore = (resume) => {
+
+  /* ==========================================================
+     SCORE DISPLAY
+  ========================================================== */
+
+  const renderScore = (
+    resume
+  ) => {
     const score =
-      resume?.resume_score ??
-      resume?.score ??
-      resume?.analysis_score ??
-      resume?.ats_score;
+      Number(
+        resume?.ai_score
+      );
+
 
     if (
-      score === null ||
-      score === undefined
+      !Number.isFinite(score)
     ) {
-      return null;
+      return "—";
     }
 
-    const numericScore = Number(score);
 
-    return Number.isFinite(numericScore)
-      ? numericScore
-      : null;
+    return `${score.toFixed(0)}%`;
   };
+
+
+  /* ==========================================================
+     SCORE COLOR
+  ========================================================== */
+
+  const getScoreColor = (
+    resume
+  ) => {
+    const score =
+      Number(
+        resume?.ai_score
+      );
+
+
+    if (
+      !Number.isFinite(score)
+    ) {
+      return "#8b91a5";
+    }
+
+
+    if (score >= 80) {
+      return "#198754";
+    }
+
+
+    if (score >= 60) {
+      return "#6652e8";
+    }
+
+
+    return "#d97706";
+  };
+
+
+  /* ==========================================================
+     LOADING SCREEN
+  ========================================================== */
 
   if (loading) {
     return (
-      <div style={styles.centerPage}>
-        <div style={styles.loadingCard}>
-          <div style={styles.logoIcon}>
-            H
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#f7f8fc",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "30px",
+        }}
+      >
+
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            padding: "45px",
+            textAlign: "center",
+            boxShadow:
+              "0 10px 30px rgba(40,40,80,0.06)",
+          }}
+        >
+
+          <div
+            style={{
+              width: "55px",
+              height: "55px",
+              borderRadius: "15px",
+              background: "#eeeaff",
+              color: "#6652e8",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin:
+                "0 auto 18px",
+              fontSize: "24px",
+            }}
+          >
+            ✦
           </div>
 
-          <h2>
-            Loading My Resumes...
+
+          <h2
+            style={{
+              margin: 0,
+              color: "#17203a",
+            }}
+          >
+            Loading Resumes...
           </h2>
 
-          <p style={styles.muted}>
-            Fetching your uploaded resumes.
+
+          <p
+            style={{
+              color: "#68708a",
+              marginTop: "10px",
+            }}
+          >
+            Fetching your resumes
+            and AI scores.
           </p>
+
         </div>
+
       </div>
     );
   }
 
+
+  /* ==========================================================
+     MAIN PAGE
+  ========================================================== */
+
   return (
-    <div style={styles.page}>
-      {/* =====================================================
-          SIDEBAR
-      ===================================================== */}
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f7f8fc",
+        padding: "40px 30px",
+      }}
+    >
 
-      <aside style={styles.sidebar}>
-        <div style={styles.logoContainer}>
-          <div style={styles.logoIcon}>
-            H
+      <div
+        style={{
+          maxWidth: "1250px",
+          margin: "0 auto",
+        }}
+      >
+
+        {/* ====================================================
+            HEADER
+        ==================================================== */}
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems:
+              "flex-start",
+            flexWrap: "wrap",
+            gap: "20px",
+            marginBottom: "30px",
+          }}
+        >
+
+          <div>
+
+            <p
+              style={{
+                color: "#6652e8",
+                fontWeight: "800",
+                fontSize: "13px",
+                letterSpacing: "1px",
+                marginBottom: "8px",
+              }}
+            >
+              AI CAREER INTELLIGENCE
+            </p>
+
+
+            <h1
+              style={{
+                margin: 0,
+                color: "#17203a",
+                fontSize: "38px",
+                fontWeight: "800",
+              }}
+            >
+              My Resumes
+            </h1>
+
+
+            <p
+              style={{
+                color: "#68708a",
+                marginTop: "10px",
+                fontSize: "16px",
+              }}
+            >
+              Manage your resumes and
+              keep your career information
+              ready for applications.
+            </p>
+
           </div>
 
-          <div style={styles.logoText}>
-            HireIntel <span>AI</span>
-          </div>
-        </div>
 
-        <div style={styles.sidebarSection}>
-          <p style={styles.sidebarLabel}>
-            CANDIDATE
-          </p>
-
-          <NavButton
-            label="Dashboard"
-            icon="▦"
+          <button
+            type="button"
+            className="btn btn-outline"
             onClick={() =>
               navigate(
                 "/candidate/dashboard"
               )
             }
-          />
-
-          <NavButton
-            label="Find Jobs"
-            icon="⌕"
-            onClick={() =>
-              navigate("/candidate/jobs")
-            }
-          />
-
-          <NavButton
-            label="My Resumes"
-            icon="▤"
-            active
-          />
-
-          <NavButton
-            label="Applications"
-            icon="▣"
-            onClick={() =>
-              navigate(
-                "/candidate/applications"
-              )
-            }
-          />
-
-          <NavButton
-            label="Job Matches"
-            icon="✦"
-            onClick={() =>
-              navigate(
-                "/candidate/job-matches"
-              )
-            }
-          />
-
-          <NavButton
-            label="Profile"
-            icon="♙"
-            onClick={() =>
-              navigate(
-                "/candidate/profile"
-              )
-            }
-          />
-        </div>
-
-        <div style={styles.sidebarBottom}>
-          <NavButton
-            label="Settings"
-            icon="⚙"
-            onClick={() =>
-              navigate(
-                "/candidate/settings"
-              )
-            }
-          />
-
-          <button
-            type="button"
-            style={styles.logoutButton}
-            onClick={() => {
-              localStorage.removeItem(
-                "hireintel_token"
-              );
-
-              navigate("/login", {
-                replace: true,
-              });
-            }}
           >
-            <span>↪</span>
-            Logout
-          </button>
-        </div>
-      </aside>
-
-      {/* =====================================================
-          MAIN
-      ===================================================== */}
-
-      <main style={styles.main}>
-        <header style={styles.header}>
-          <div>
-            <p style={styles.eyebrow}>
-              RESUME INTELLIGENCE
-            </p>
-
-            <h1 style={styles.title}>
-              My Resumes
-            </h1>
-
-            <p style={styles.subtitle}>
-              Manage your resumes and keep your
-              career information ready for
-              applications.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            style={{
-              ...styles.primaryButton,
-              ...(uploading
-                ? styles.disabledButton
-                : {}),
-            }}
-            disabled={uploading}
-            onClick={() =>
-              fileInputRef.current?.click()
-            }
-          >
-            {uploading
-              ? "Uploading..."
-              : "＋ Upload Resume"}
+            ← Dashboard
           </button>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,application/pdf"
-            onChange={handleFileChange}
-            style={{
-              display: "none",
-            }}
-          />
-        </header>
+        </div>
 
-        {/* ERROR */}
+
+        {/* ====================================================
+            ERROR
+        ==================================================== */}
 
         {error && (
-          <div style={styles.errorBox}>
-            <strong>
-              Resume action failed
-            </strong>
-
-            <p>{error}</p>
+          <div
+            style={{
+              background: "#fff0f0",
+              border:
+                "1px solid #ffd2d2",
+              color: "#c62828",
+              padding:
+                "15px 18px",
+              borderRadius: "12px",
+              marginBottom: "20px",
+            }}
+          >
+            {error}
           </div>
         )}
 
-        {/* SUCCESS */}
+
+        {/* ====================================================
+            SUCCESS
+        ==================================================== */}
 
         {success && (
-          <div style={styles.successBox}>
-            <strong>
-              Success
-            </strong>
-
-            <p>{success}</p>
+          <div
+            style={{
+              background: "#effaf3",
+              border:
+                "1px solid #ccebd8",
+              color: "#247a46",
+              padding:
+                "15px 18px",
+              borderRadius: "12px",
+              marginBottom: "20px",
+            }}
+          >
+            {success}
           </div>
         )}
 
-        {/* =================================================
-            UPLOAD AREA
-        ================================================= */}
 
-        <section style={styles.uploadCard}>
-          <div style={styles.uploadIcon}>
-            ↑
-          </div>
+        {/* ====================================================
+            UPLOAD CARD
+        ==================================================== */}
 
-          <div style={styles.uploadContent}>
-            <h2 style={styles.cardTitle}>
-              Upload a new resume
-            </h2>
+        <section
+          style={{
+            background: "#fff",
+            borderRadius: "22px",
+            padding: "32px",
+            marginBottom: "32px",
+            border:
+              "1px dashed #cfc8ff",
+            boxShadow:
+              "0 8px 25px rgba(40,40,80,0.04)",
+          }}
+        >
 
-            <p style={styles.cardText}>
-              Upload your latest resume in PDF
-              format. HireIntel AI can use it for
-              resume analysis and job matching.
-            </p>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "22px",
+              flexWrap: "wrap",
+            }}
+          >
 
-            <button
-              type="button"
+            <div
               style={{
-                ...styles.secondaryButton,
-                ...(uploading
-                  ? styles.disabledButton
-                  : {}),
+                width: "64px",
+                height: "64px",
+                borderRadius: "18px",
+                background: "#eeeaff",
+                color: "#6652e8",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "30px",
+                flexShrink: 0,
               }}
-              disabled={uploading}
-              onClick={() =>
-                fileInputRef.current?.click()
-              }
             >
-              {uploading
-                ? "Uploading..."
-                : "Choose PDF Resume"}
-            </button>
+              ↑
+            </div>
 
-            <span style={styles.fileHint}>
-              Maximum file size: 10 MB
-            </span>
-          </div>
-        </section>
 
-        {/* =================================================
-            RESUME LIST
-        ================================================= */}
+            <div
+              style={{
+                flex: 1,
+                minWidth: "260px",
+              }}
+            >
 
-        <section style={styles.resumeSection}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <h2 style={styles.sectionTitle}>
-                Uploaded Resumes
+              <h2
+                style={{
+                  margin: 0,
+                  color: "#17203a",
+                  fontSize: "21px",
+                }}
+              >
+                Upload a new resume
               </h2>
 
-              <p style={styles.sectionText}>
-                {resumes.length} resume
-                {resumes.length !== 1
-                  ? "s"
-                  : ""}{" "}
-                found.
-              </p>
-            </div>
-          </div>
 
-          {resumes.length === 0 ? (
-            <div style={styles.emptyCard}>
-              <div style={styles.emptyIcon}>
-                ▤
+              <p
+                style={{
+                  color: "#68708a",
+                  marginTop: "8px",
+                  lineHeight: "1.6",
+                }}
+              >
+                Upload your latest resume
+                in PDF format. HireIntel AI
+                will analyze your resume
+                and generate job matches.
+              </p>
+
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems:
+                    "center",
+                  gap: "15px",
+                  flexWrap:
+                    "wrap",
+                  marginTop: "18px",
+                }}
+              >
+
+                <label
+                  htmlFor="resume-upload"
+                  className="btn btn-outline"
+                  style={{
+                    cursor:
+                      uploading
+                        ? "not-allowed"
+                        : "pointer",
+
+                    opacity:
+                      uploading
+                        ? 0.6
+                        : 1,
+                  }}
+                >
+                  {uploading
+                    ? "Analyzing Resume..."
+                    : "Choose PDF Resume"}
+                </label>
+
+
+                <input
+                  id="resume-upload"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  onChange={
+                    handleUpload
+                  }
+                  disabled={
+                    uploading
+                  }
+                  style={{
+                    display:
+                      "none",
+                  }}
+                />
+
+
+                <span
+                  style={{
+                    color:
+                      "#8b91a5",
+                    fontSize:
+                      "13px",
+                  }}
+                >
+                  Maximum file size:
+                  {" "}10 MB
+                </span>
+
               </div>
 
-              <h2>
-                No resumes uploaded yet
-              </h2>
-
-              <p>
-                Upload your resume to use it
-                when applying for jobs.
-              </p>
-
-              <button
-                type="button"
-                style={styles.primaryButton}
-                onClick={() =>
-                  fileInputRef.current?.click()
-                }
-              >
-                Upload Your Resume →
-              </button>
             </div>
-          ) : (
-            <div style={styles.resumeList}>
-              {resumes.map((resume) => {
-                const score =
-                  getScore(resume);
 
-                return (
-                  <article
-                    key={resume?.id}
-                    style={styles.resumeCard}
+          </div>
+
+        </section>
+
+
+        {/* ====================================================
+            RESUME HEADER
+        ==================================================== */}
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems:
+              "center",
+            marginBottom:
+              "18px",
+          }}
+        >
+
+          <div>
+
+            <h2
+              style={{
+                margin: 0,
+                color: "#17203a",
+                fontSize: "27px",
+              }}
+            >
+              Uploaded Resumes
+            </h2>
+
+
+            <p
+              style={{
+                color: "#8b91a5",
+                marginTop: "7px",
+              }}
+            >
+              {resumes.length}{" "}
+              {resumes.length === 1
+                ? "resume"
+                : "resumes"}{" "}
+              found.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        {/* ====================================================
+            EMPTY STATE
+        ==================================================== */}
+
+        {resumes.length === 0 ? (
+
+          <section
+            style={{
+              background: "#fff",
+              borderRadius: "20px",
+              padding:
+                "60px 30px",
+              textAlign:
+                "center",
+            }}
+          >
+
+            <div
+              style={{
+                width: "70px",
+                height: "70px",
+                borderRadius: "20px",
+                background:
+                  "#eeeaff",
+                color:
+                  "#6652e8",
+                display:
+                  "flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                margin:
+                  "0 auto 20px",
+                fontSize:
+                  "30px",
+              }}
+            >
+              📄
+            </div>
+
+
+            <h2
+              style={{
+                margin: 0,
+                color:
+                  "#17203a",
+              }}
+            >
+              No resumes uploaded
+            </h2>
+
+
+            <p
+              style={{
+                color:
+                  "#68708a",
+                marginTop:
+                  "10px",
+              }}
+            >
+              Upload your resume to
+              enable AI resume analysis
+              and job matching.
+            </p>
+
+          </section>
+
+        ) : (
+
+          /* ==================================================
+             RESUME LIST
+          ================================================== */
+
+          <div
+            style={{
+              display:
+                "grid",
+              gap: "18px",
+            }}
+          >
+
+            {resumes.map(
+              (
+                resume,
+                index
+              ) => (
+
+                <section
+                  key={
+                    resume.id
+                  }
+                  style={{
+                    background:
+                      "#fff",
+
+                    borderRadius:
+                      "20px",
+
+                    padding:
+                      "25px 28px",
+
+                    boxShadow:
+                      "0 6px 20px rgba(40,40,80,0.04)",
+
+                    border:
+                      index === 0
+                        ? "1px solid #ded8ff"
+                        : "1px solid #edf0f5",
+                  }}
+                >
+
+                  <div
+                    style={{
+                      display:
+                        "flex",
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "space-between",
+
+                      gap:
+                        "20px",
+
+                      flexWrap:
+                        "wrap",
+                    }}
                   >
-                    <div style={styles.fileIcon}>
-                      PDF
-                    </div>
 
-                    <div style={styles.resumeInfo}>
-                      <h3
-                        style={
-                          styles.resumeName
-                        }
-                      >
-                        {resume?.filename ||
-                          resume?.file_name ||
-                          `Resume #${
-                            resume?.id ||
-                            "N/A"
-                          }`}
-                      </h3>
-
-                      <div
-                        style={
-                          styles.metaRow
-                        }
-                      >
-                        <span>
-                          Resume ID:{" "}
-                          {resume?.id ||
-                            "N/A"}
-                        </span>
-
-                        <span>
-                          Uploaded:{" "}
-                          {formatDate(
-                            resume?.created_at ||
-                              resume?.uploaded_at ||
-                              resume?.upload_date
-                          )}
-                        </span>
-                      </div>
-                    </div>
+                    {/* ========================================
+                       RESUME INFORMATION
+                    ======================================== */}
 
                     <div
-                      style={
-                        styles.analysisBox
-                      }
+                      style={{
+                        display:
+                          "flex",
+
+                        alignItems:
+                          "center",
+
+                        gap:
+                          "18px",
+
+                        minWidth:
+                          0,
+
+                        flex:
+                          1,
+                      }}
                     >
+
+                      <div
+                        style={{
+                          width:
+                            "58px",
+
+                          height:
+                            "58px",
+
+                          borderRadius:
+                            "16px",
+
+                          background:
+                            "#fff0f0",
+
+                          color:
+                            "#d63c3c",
+
+                          display:
+                            "flex",
+
+                          alignItems:
+                            "center",
+
+                          justifyContent:
+                            "center",
+
+                          fontWeight:
+                            "800",
+
+                          fontSize:
+                            "13px",
+
+                          flexShrink:
+                            0,
+                        }}
+                      >
+                        PDF
+                      </div>
+
+
+                      <div
+                        style={{
+                          minWidth:
+                            0,
+                        }}
+                      >
+
+                        <div
+                          style={{
+                            display:
+                              "flex",
+
+                            alignItems:
+                              "center",
+
+                            gap:
+                              "10px",
+
+                            flexWrap:
+                              "wrap",
+                          }}
+                        >
+
+                          <h3
+                            style={{
+                              margin:
+                                0,
+
+                              color:
+                                "#17203a",
+
+                              fontSize:
+                                "20px",
+                            }}
+                          >
+                            Resume #
+                            {
+                              resume.id
+                            }
+                          </h3>
+
+
+                          {index ===
+                            0 && (
+                            <span
+                              style={{
+                                background:
+                                  "#eeeaff",
+
+                                color:
+                                  "#6652e8",
+
+                                padding:
+                                  "5px 10px",
+
+                                borderRadius:
+                                  "20px",
+
+                                fontSize:
+                                  "11px",
+
+                                fontWeight:
+                                  "800",
+                              }}
+                            >
+                              LATEST
+                            </span>
+                          )}
+
+                        </div>
+
+
+                        <div
+                          style={{
+                            display:
+                              "flex",
+
+                            gap:
+                              "15px",
+
+                            flexWrap:
+                              "wrap",
+
+                            marginTop:
+                              "7px",
+
+                            color:
+                              "#8b91a5",
+
+                            fontSize:
+                              "13px",
+                          }}
+                        >
+
+                          <span>
+                            Resume ID:
+                            {" "}
+                            {
+                              resume.id
+                            }
+                          </span>
+
+
+                          <span>
+                            Uploaded:
+                            {" "}
+                            {
+                              formatDate(
+                                resume.uploaded_at
+                              )
+                            }
+                          </span>
+
+                        </div>
+
+
+                        <p
+                          style={{
+                            margin:
+                              "8px 0 0",
+
+                            color:
+                              "#68708a",
+
+                            fontSize:
+                              "13px",
+
+                            maxWidth:
+                              "600px",
+
+                            overflow:
+                              "hidden",
+
+                            textOverflow:
+                              "ellipsis",
+
+                            whiteSpace:
+                              "nowrap",
+                          }}
+                        >
+                          {
+                            resume.original_filename ||
+                            "Uploaded Resume"
+                          }
+                        </p>
+
+                      </div>
+
+                    </div>
+
+
+                    {/* ========================================
+                       AI SCORE
+                    ======================================== */}
+
+                    <div
+                      style={{
+                        minWidth:
+                          "110px",
+
+                        textAlign:
+                          "center",
+                      }}
+                    >
+
                       <span
-                        style={
-                          styles.analysisLabel
-                        }
+                        style={{
+                          display:
+                            "block",
+
+                          color:
+                            "#8b91a5",
+
+                          fontSize:
+                            "12px",
+
+                          marginBottom:
+                            "5px",
+                        }}
                       >
                         AI Score
                       </span>
 
+
                       <strong
-                        style={
-                          styles.analysisScore
-                        }
+                        style={{
+                          display:
+                            "block",
+
+                          fontSize:
+                            "23px",
+
+                          fontWeight:
+                            "800",
+
+                          color:
+                            getScoreColor(
+                              resume
+                            ),
+                        }}
                       >
-                        {score !== null
-                          ? `${score}%`
-                          : "—"}
+                        {
+                          renderScore(
+                            resume
+                          )
+                        }
                       </strong>
+
                     </div>
+
+
+                    {/* ========================================
+                       STATUS
+                    ======================================== */}
 
                     <div
                       style={{
-                        ...styles.statusBadge,
-                        background:
-                          score !== null
-                            ? "#eafaf0"
-                            : "#f1f3f7",
-                        color:
-                          score !== null
-                            ? "#17834b"
-                            : "#666d7c",
+                        minWidth:
+                          "95px",
+
+                        textAlign:
+                          "center",
                       }}
                     >
-                      {score !== null
-                        ? "Analyzed"
-                        : "Uploaded"}
+
+                      <span
+                        style={{
+                          display:
+                            "inline-block",
+
+                          background:
+                            "#effaf3",
+
+                          color:
+                            "#247a46",
+
+                          padding:
+                            "9px 14px",
+
+                          borderRadius:
+                            "20px",
+
+                          fontSize:
+                            "12px",
+
+                          fontWeight:
+                            "700",
+                        }}
+                      >
+                        Analyzed
+                      </span>
+
                     </div>
-                  </article>
-                );
-              })}
+
+
+                    {/* ========================================
+                       DELETE
+                    ======================================== */}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDelete(
+                          resume.id
+                        )
+                      }
+                      disabled={
+                        deletingId ===
+                        resume.id
+                      }
+                      style={{
+                        border:
+                          "1px solid #f0d2d2",
+
+                        background:
+                          "#fff",
+
+                        color:
+                          "#d93025",
+
+                        borderRadius:
+                          "10px",
+
+                        padding:
+                          "10px 14px",
+
+                        cursor:
+                          deletingId ===
+                          resume.id
+                            ? "not-allowed"
+                            : "pointer",
+
+                        opacity:
+                          deletingId ===
+                          resume.id
+                            ? 0.6
+                            : 1,
+                      }}
+                    >
+                      {
+                        deletingId ===
+                        resume.id
+                          ? "Deleting..."
+                          : "Delete"
+                      }
+                    </button>
+
+                  </div>
+
+                </section>
+
+              )
+            )}
+
+          </div>
+        )}
+
+
+        {/* ====================================================
+            RESUME INTELLIGENCE
+        ==================================================== */}
+
+        <section
+          style={{
+            marginTop:
+              "30px",
+
+            background:
+              "linear-gradient(135deg, #f7f4ff, #ffffff)",
+
+            border:
+              "1px solid #ded8ff",
+
+            borderRadius:
+              "20px",
+
+            padding:
+              "28px",
+          }}
+        >
+
+          <div
+            style={{
+              display:
+                "flex",
+
+              gap:
+                "15px",
+
+              alignItems:
+                "flex-start",
+            }}
+          >
+
+            <div
+              style={{
+                width:
+                  "45px",
+
+                height:
+                  "45px",
+
+                borderRadius:
+                  "14px",
+
+                background:
+                  "#eeeaff",
+
+                color:
+                  "#6652e8",
+
+                display:
+                  "flex",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
+
+                fontSize:
+                  "20px",
+
+                flexShrink:
+                  0,
+              }}
+            >
+              ✦
             </div>
-          )}
+
+
+            <div>
+
+              <h3
+                style={{
+                  margin:
+                    0,
+
+                  color:
+                    "#17203a",
+                }}
+              >
+                Resume Intelligence
+              </h3>
+
+
+              <p
+                style={{
+                  color:
+                    "#68708a",
+
+                  lineHeight:
+                    "1.7",
+
+                  marginTop:
+                    "8px",
+                }}
+              >
+                HireIntel AI analyzes your
+                resume to identify skills,
+                education, experience,
+                projects, certifications
+                and keywords. The analysis
+                is also used for intelligent
+                job matching.
+              </p>
+
+            </div>
+
+          </div>
+
         </section>
 
-        {/* =================================================
-            INFORMATION CARD
-        ================================================= */}
+      </div>
 
-        <div style={styles.infoCard}>
-          <div style={styles.infoIcon}>
-            ✦
-          </div>
-
-          <div>
-            <h3 style={styles.infoTitle}>
-              Resume Intelligence
-            </h3>
-
-            <p style={styles.infoText}>
-              Your resume is used to calculate
-              job matching insights and support
-              the application workflow. Keep your
-              resume updated with your latest
-              skills, projects, education and
-              experience.
-            </p>
-          </div>
-        </div>
-      </main>
     </div>
   );
 }
 
-/* ============================================================
-   SIDEBAR BUTTON
-============================================================ */
-
-function NavButton({
-  label,
-  icon,
-  active = false,
-  onClick,
-}) {
-  return (
-    <button
-      type="button"
-      style={{
-        ...styles.navItem,
-        ...(active
-          ? styles.activeNavItem
-          : {}),
-      }}
-      onClick={onClick}
-    >
-      <span>{icon}</span>
-      {label}
-    </button>
-  );
-}
-
-/* ============================================================
-   STYLES
-============================================================ */
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    background: "#f7f8fc",
-    color: "#172033",
-    fontFamily:
-      "Inter, Arial, Helvetica, sans-serif",
-  },
-
-  sidebar: {
-    width: "250px",
-    minHeight: "100vh",
-    background: "#ffffff",
-    borderRight:
-      "1px solid #e8eaf0",
-    display: "flex",
-    flexDirection: "column",
-    padding: "28px 18px",
-    boxSizing: "border-box",
-    position: "sticky",
-    top: 0,
-  },
-
-  logoContainer: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    padding:
-      "5px 10px 35px",
-  },
-
-  logoIcon: {
-    width: "42px",
-    height: "42px",
-    borderRadius: "12px",
-    background:
-      "linear-gradient(135deg, #6d5ce7, #8a72f2)",
-    color: "#ffffff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "22px",
-    fontWeight: "800",
-    flexShrink: 0,
-  },
-
-  logoText: {
-    fontSize: "20px",
-    fontWeight: "800",
-  },
-
-  sidebarSection: {
-    flex: 1,
-  },
-
-  sidebarLabel: {
-    fontSize: "11px",
-    fontWeight: "700",
-    color: "#a0a5b5",
-    letterSpacing: "1px",
-    padding: "0 12px",
-    marginBottom: "10px",
-  },
-
-  navItem: {
-    width: "100%",
-    border: "none",
-    background: "transparent",
-    color: "#646b7c",
-    padding: "13px 14px",
-    borderRadius: "10px",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    fontSize: "14px",
-    fontWeight: "600",
-    cursor: "pointer",
-    textAlign: "left",
-    marginBottom: "5px",
-  },
-
-  activeNavItem: {
-    background: "#f0edff",
-    color: "#6354e8",
-  },
-
-  sidebarBottom: {
-    borderTop:
-      "1px solid #eeeeee",
-    paddingTop: "18px",
-  },
-
-  logoutButton: {
-    width: "100%",
-    border: "none",
-    background: "transparent",
-    color: "#d05252",
-    padding: "13px 14px",
-    borderRadius: "10px",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    fontSize: "14px",
-    fontWeight: "600",
-    cursor: "pointer",
-    textAlign: "left",
-  },
-
-  main: {
-    flex: 1,
-    padding:
-      "38px 45px 60px",
-    minWidth: 0,
-  },
-
-  header: {
-    display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems: "flex-start",
-    gap: "20px",
-    marginBottom: "28px",
-  },
-
-  eyebrow: {
-    color: "#6657e8",
-    fontSize: "11px",
-    fontWeight: "800",
-    letterSpacing: "1px",
-    margin: "0 0 8px",
-  },
-
-  title: {
-    margin: 0,
-    fontSize: "34px",
-    fontWeight: "800",
-  },
-
-  subtitle: {
-    color: "#7a8090",
-    marginTop: "8px",
-    fontSize: "14px",
-    lineHeight: "1.6",
-  },
-
-  primaryButton: {
-    border: "none",
-    background: "#6657e8",
-    color: "#ffffff",
-    padding:
-      "13px 20px",
-    borderRadius: "10px",
-    fontWeight: "700",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-
-  disabledButton: {
-    opacity: 0.6,
-    cursor: "not-allowed",
-  },
-
-  secondaryButton: {
-    border:
-      "1px solid #ddd9f6",
-    background: "#ffffff",
-    color: "#6657e8",
-    padding:
-      "11px 18px",
-    borderRadius: "9px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-
-  uploadCard: {
-    background: "#ffffff",
-    border:
-      "1px dashed #cfc9f5",
-    borderRadius: "18px",
-    padding: "25px",
-    display: "flex",
-    alignItems: "center",
-    gap: "20px",
-    marginBottom: "32px",
-  },
-
-  uploadIcon: {
-    width: "58px",
-    height: "58px",
-    borderRadius: "15px",
-    background: "#f0edff",
-    color: "#6657e8",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "25px",
-    fontWeight: "800",
-    flexShrink: 0,
-  },
-
-  uploadContent: {
-    flex: 1,
-  },
-
-  cardTitle: {
-    margin: 0,
-    fontSize: "18px",
-  },
-
-  cardText: {
-    color: "#7d8392",
-    fontSize: "13px",
-    lineHeight: "1.6",
-    margin:
-      "7px 0 14px",
-  },
-
-  fileHint: {
-    color: "#9a9fac",
-    fontSize: "11px",
-    marginLeft: "12px",
-  },
-
-  resumeSection: {
-    marginTop: "10px",
-  },
-
-  sectionHeader: {
-    marginBottom: "18px",
-  },
-
-  sectionTitle: {
-    margin: 0,
-    fontSize: "22px",
-  },
-
-  sectionText: {
-    color: "#8a90a0",
-    fontSize: "13px",
-    marginTop: "7px",
-  },
-
-  resumeList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "15px",
-  },
-
-  resumeCard: {
-    background: "#ffffff",
-    border:
-      "1px solid #e8eaf0",
-    borderRadius: "18px",
-    padding: "20px",
-    display: "flex",
-    alignItems: "center",
-    gap: "17px",
-    flexWrap: "wrap",
-  },
-
-  fileIcon: {
-    width: "52px",
-    height: "52px",
-    borderRadius: "13px",
-    background: "#fff0f0",
-    color: "#c53f3f",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "11px",
-    fontWeight: "800",
-    flexShrink: 0,
-  },
-
-  resumeInfo: {
-    flex: 1,
-    minWidth: "260px",
-  },
-
-  resumeName: {
-    margin: 0,
-    fontSize: "16px",
-  },
-
-  metaRow: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "13px",
-    color: "#969ba8",
-    fontSize: "11px",
-    marginTop: "8px",
-  },
-
-  analysisBox: {
-    minWidth: "80px",
-    textAlign: "center",
-  },
-
-  analysisLabel: {
-    display: "block",
-    color: "#9297a5",
-    fontSize: "10px",
-  },
-
-  analysisScore: {
-    display: "block",
-    color: "#6657e8",
-    fontSize: "20px",
-    marginTop: "3px",
-  },
-
-  statusBadge: {
-    padding:
-      "7px 12px",
-    borderRadius: "20px",
-    fontSize: "11px",
-    fontWeight: "700",
-  },
-
-  emptyCard: {
-    background: "#ffffff",
-    border:
-      "1px solid #e8eaf0",
-    borderRadius: "20px",
-    padding:
-      "60px 30px",
-    textAlign: "center",
-  },
-
-  emptyIcon: {
-    width: "65px",
-    height: "65px",
-    borderRadius: "50%",
-    background: "#f0edff",
-    color: "#6657e8",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    margin:
-      "0 auto 20px",
-    fontSize: "25px",
-  },
-
-  infoCard: {
-    marginTop: "25px",
-    background:
-      "linear-gradient(135deg, #f4f1ff, #ffffff)",
-    border:
-      "1px solid #e2dcff",
-    borderRadius: "18px",
-    padding: "22px",
-    display: "flex",
-    gap: "16px",
-  },
-
-  infoIcon: {
-    color: "#6657e8",
-    fontSize: "22px",
-  },
-
-  infoTitle: {
-    margin: 0,
-    fontSize: "16px",
-  },
-
-  infoText: {
-    margin: "7px 0 0",
-    color: "#747b8c",
-    fontSize: "13px",
-    lineHeight: "1.6",
-  },
-
-  errorBox: {
-    background: "#fff0f0",
-    border:
-      "1px solid #ffd4d4",
-    color: "#b42323",
-    borderRadius: "14px",
-    padding:
-      "16px 20px",
-    marginBottom: "20px",
-  },
-
-  successBox: {
-    background: "#eafaf0",
-    border:
-      "1px solid #ccefdc",
-    color: "#177a46",
-    borderRadius: "14px",
-    padding:
-      "16px 20px",
-    marginBottom: "20px",
-  },
-
-  centerPage: {
-    minHeight: "100vh",
-    background: "#f7f8fc",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "30px",
-  },
-
-  loadingCard: {
-    background: "#ffffff",
-    border:
-      "1px solid #e8eaf0",
-    borderRadius: "20px",
-    padding: "50px",
-    textAlign: "center",
-    width: "100%",
-    maxWidth: "500px",
-  },
-
-  muted: {
-    color: "#7d8392",
-    lineHeight: "1.6",
-  },
-};
 
 export default CandidateResumes;

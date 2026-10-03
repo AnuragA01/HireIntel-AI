@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ResumeResponse(BaseModel):
-
     id: int
 
     user_id: int
@@ -15,9 +14,12 @@ class ResumeResponse(BaseModel):
 
     file_type: str
 
-    extracted_text: str | None
+    extracted_text: str | None = None
 
     uploaded_at: datetime
+
+    # AI Resume Analysis Score
+    ai_score: float | None = None
 
     model_config = ConfigDict(
         from_attributes=True

@@ -749,141 +749,191 @@ function HomePage() {
 function CandidateJobDetails() {
 
   const navigate = useNavigate();
-
   const { jobId } = useParams();
-
 
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [resumes, setResumes] = useState([]);
   const [resumeId, setResumeId] = useState("");
+  const [resumesLoading, setResumesLoading] = useState(true);
+
   const [coverLetter, setCoverLetter] = useState("");
-
   const [applying, setApplying] = useState(false);
-
-  const [applicationSuccess, setApplicationSuccess] =
-    useState(null);
-
-  const [alreadyApplied, setAlreadyApplied] =
-    useState(false);
-
+  const [applicationSuccess, setApplicationSuccess] = useState(null);
+  const [alreadyApplied, setAlreadyApplied] = useState(false);
 
   useEffect(() => {
 
     let cancelled = false;
 
+    const loadData = async () => {
 
-    const loadJob = async () => {
-
-      const token =
-        localStorage.getItem("hireintel_token");
-
+      const token = localStorage.getItem("hireintel_token");
 
       if (!token) {
-
-        navigate("/login", {
-          replace: true,
-        });
-
+        navigate("/login", { replace: true });
         return;
       }
-
 
       if (!jobId) {
-
         setError("Job ID is missing.");
         setLoading(false);
-
+        setResumesLoading(false);
         return;
       }
-
 
       try {
 
-        const response = await fetch(
+        // --------------------------------------------------------
+        // LOAD JOB
+        // --------------------------------------------------------
+
+        const jobResponse = await fetch(
           `${API_BASE_URL}/candidate/jobs/${jobId}`,
           {
             method: "GET",
-
             headers: {
-              Authorization:
-                `Bearer ${token}`,
-
-              Accept:
-                "application/json",
+              Authorization: `Bearer ${token}`,
+              Accept: "application/json",
             },
           }
         );
 
+        const jobData = await jobResponse.json().catch(() => null);
 
-        const data =
-          await response.json()
-            .catch(() => null);
+        if (jobResponse.status === 401) {
+          localStorage.removeItem("hireintel_token");
+          localStorage.removeItem("hireintel_role");
+          localStorage.removeItem("hireintel_user_id");
+          localStorage.removeItem("hireintel_email");
+          navigate("/login", { replace: true });
+          return;
+        }
 
-
-        if (response.status === 401) {
-
-          localStorage.removeItem(
-            "hireintel_token"
+        if (!jobResponse.ok) {
+          setError(
+            getErrorMessage(
+              jobData,
+              "Unable to load this job."
+            )
           );
-
-          navigate("/login", {
-            replace: true,
-          });
-
           return;
         }
-
-
-        if (!response.ok) {
-
-          if (!cancelled) {
-
-            setError(
-              getErrorMessage(
-                data,
-                "Unable to load this job."
-              )
-            );
-
-          }
-
-          return;
-        }
-
 
         if (!cancelled) {
-          setJob(data);
+          setJob(jobData);
         }
 
-
-        /* CHECK EXISTING APPLICATION */
+        // --------------------------------------------------------
+        // LOAD RESUMES
+        // Backend returns newest resumes first.
+        // The first resume is selected automatically.
+        // --------------------------------------------------------
 
         try {
 
-          const applicationsResponse =
-            await fetch(
-              `${API_BASE_URL}/applications/my-applications`,
-              {
-                method: "GET",
+          setResumesLoading(true);
 
-                headers: {
-                  Authorization:
-                    `Bearer ${token}`,
+          const resumesResponse = await fetch(
+            `${API_BASE_URL}/resumes/my-resumes`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json",
+              },
+            }
+          );
 
-                  Accept:
-                    "application/json",
-                },
-              }
+          const resumesData = await resumesResponse
+            .json()
+            .catch(() => []);
+
+          if (resumesResponse.status === 401) {
+            localStorage.removeItem("hireintel_token");
+            localStorage.removeItem("hireintel_role");
+            localStorage.removeItem("hireintel_user_id");
+            localStorage.removeItem("hireintel_email");
+            navigate("/login", { replace: true });
+            return;
+          }
+
+          if (!resumesResponse.ok) {
+            throw new Error(
+              getErrorMessage(
+                resumesData,
+                "Unable to load your resumes."
+              )
             );
+          }
 
+          const resumeList = Array.isArray(resumesData)
+            ? resumesData
+            : [];
 
-          const applicationsData =
-            await applicationsResponse
-              .json()
-              .catch(() => []);
+          if (!cancelled) {
+            setResumes(resumeList);
 
+            if (resumeList.length > 0) {
+              setResumeId(String(resumeList[0].id));
+            } else {
+              setResumeId("");
+            }
+          }
+
+        } catch (resumeError) {
+
+          console.warn(
+            "Resume loading failed:",
+            resumeError
+          );
+
+          if (!cancelled) {
+            setResumes([]);
+            setResumeId("");
+          }
+
+        } finally {
+
+          if (!cancelled) {
+            setResumesLoading(false);
+          }
+
+        }
+
+        // --------------------------------------------------------
+        // CHECK EXISTING APPLICATION
+        // --------------------------------------------------------
+
+        try {
+
+          const applicationsResponse = await fetch(
+            `${API_BASE_URL}/applications/my-applications`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json",
+              },
+            }
+          );
+
+          const applicationsData = await applicationsResponse
+            .json()
+            .catch(() => []);
+
+          if (
+            applicationsResponse.status === 401
+          ) {
+            localStorage.removeItem("hireintel_token");
+            localStorage.removeItem("hireintel_role");
+            localStorage.removeItem("hireintel_user_id");
+            localStorage.removeItem("hireintel_email");
+            navigate("/login", { replace: true });
+            return;
+          }
 
           if (
             applicationsResponse.ok &&
@@ -893,24 +943,13 @@ function CandidateJobDetails() {
             const existingApplication =
               applicationsData.find(
                 (application) =>
-                  Number(application.job_id) ===
-                  Number(jobId)
+                  Number(application.job_id) === Number(jobId)
               );
 
-
-            if (
-              existingApplication &&
-              !cancelled
-            ) {
-
+            if (existingApplication && !cancelled) {
               setAlreadyApplied(true);
-
-              setApplicationSuccess(
-                existingApplication
-              );
-
+              setApplicationSuccess(existingApplication);
             }
-
           }
 
         } catch (applicationError) {
@@ -929,13 +968,10 @@ function CandidateJobDetails() {
           requestError
         );
 
-
         if (!cancelled) {
-
           setError(
             "Unable to connect to the HireIntel AI server."
           );
-
         }
 
       } finally {
@@ -943,16 +979,12 @@ function CandidateJobDetails() {
         if (!cancelled) {
           setLoading(false);
         }
-
       }
-
     };
 
-
     const timerId = window.setTimeout(() => {
-      loadJob();
+      loadData();
     }, 0);
-
 
     return () => {
       cancelled = true;
@@ -961,69 +993,44 @@ function CandidateJobDetails() {
 
   }, [jobId, navigate]);
 
-
-  /* APPLY */
+  // ------------------------------------------------------------
+  // APPLY FOR JOB
+  // ------------------------------------------------------------
 
   const applyForJob = async (event) => {
 
     event.preventDefault();
 
-
-    const token =
-      localStorage.getItem("hireintel_token");
-
+    const token = localStorage.getItem("hireintel_token");
 
     if (!token) {
-
-      navigate("/login", {
-        replace: true,
-      });
-
+      navigate("/login", { replace: true });
       return;
     }
-
 
     if (alreadyApplied) {
-
-      setError(
-        "You have already applied for this job."
-      );
-
+      setError("You have already applied for this job.");
       return;
     }
-
 
     if (!resumeId) {
-
-      setError(
-        "Please enter your resume ID before applying."
-      );
-
+      setError("Please upload a resume before applying.");
       return;
     }
 
-
-    const numericResumeId =
-      Number(resumeId);
-
+    const numericResumeId = Number(resumeId);
 
     if (
       !Number.isInteger(numericResumeId) ||
       numericResumeId <= 0
     ) {
-
-      setError(
-        "Resume ID must be a valid positive number."
-      );
-
+      setError("Please select a valid resume.");
       return;
     }
-
 
     setApplying(true);
     setError("");
     setApplicationSuccess(null);
-
 
     try {
 
@@ -1031,65 +1038,41 @@ function CandidateJobDetails() {
         `${API_BASE_URL}/applications/job/${jobId}`,
         {
           method: "POST",
-
           headers: {
-            Authorization:
-              `Bearer ${token}`,
-
-            Accept:
-              "application/json",
-
-            "Content-Type":
-              "application/json",
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
           },
-
           body: JSON.stringify({
-            resume_id:
-              numericResumeId,
-
-            cover_letter:
-              coverLetter.trim() ||
-              null,
+            resume_id: numericResumeId,
+            cover_letter: coverLetter.trim() || null,
           }),
         }
       );
 
-
-      const data =
-        await response.json()
-          .catch(() => null);
-
+      const data = await response.json().catch(() => null);
 
       if (response.status === 401) {
-
-        localStorage.removeItem(
-          "hireintel_token"
-        );
-
-        navigate("/login", {
-          replace: true,
-        });
-
+        localStorage.removeItem("hireintel_token");
+        localStorage.removeItem("hireintel_role");
+        localStorage.removeItem("hireintel_user_id");
+        localStorage.removeItem("hireintel_email");
+        navigate("/login", { replace: true });
         return;
       }
 
-
       if (!response.ok) {
-
         setError(
           getErrorMessage(
             data,
             "Application failed."
           )
         );
-
         return;
       }
 
-
       setApplicationSuccess(data);
       setAlreadyApplied(true);
-
 
     } catch (requestError) {
 
@@ -1098,22 +1081,16 @@ function CandidateJobDetails() {
         requestError
       );
 
-
       setError(
         "Unable to connect to the HireIntel AI server."
       );
 
     } finally {
-
       setApplying(false);
-
     }
-
   };
 
-
   if (loading) {
-
     return (
       <div
         style={{
@@ -1124,27 +1101,15 @@ function CandidateJobDetails() {
           background: "#f7f8fc",
         }}
       >
-
         <div style={{ textAlign: "center" }}>
-
-          <h2>
-            Loading job...
-          </h2>
-
-          <p>
-            Please wait while we load the job details.
-          </p>
-
+          <h2>Loading job...</h2>
+          <p>Please wait while we load the job details.</p>
         </div>
-
       </div>
     );
-
   }
 
-
   if (error && !job) {
-
     return (
       <div
         style={{
@@ -1156,7 +1121,6 @@ function CandidateJobDetails() {
           padding: "30px",
         }}
       >
-
         <div
           style={{
             width: "100%",
@@ -1167,67 +1131,36 @@ function CandidateJobDetails() {
             textAlign: "center",
           }}
         >
-
-          <div
-            style={{
-              fontSize: "30px",
-              marginBottom: "20px",
-            }}
-          >
+          <div style={{ fontSize: "30px", marginBottom: "20px" }}>
             ⚠
           </div>
 
+          <h1>Job not found</h1>
 
-          <h1>
-            Job not found
-          </h1>
-
-
-          <p
-            style={{
-              color: "#68708a",
-              marginTop: "15px",
-            }}
-          >
+          <p style={{ color: "#68708a", marginTop: "15px" }}>
             {error}
           </p>
 
-
-          <p
-            style={{
-              color: "#8b91a5",
-              marginTop: "10px",
-            }}
-          >
+          <p style={{ color: "#8b91a5", marginTop: "10px" }}>
             Job ID: {jobId || "Missing"}
           </p>
-
 
           <button
             type="button"
             className="btn btn-primary"
-            style={{
-              marginTop: "25px",
-            }}
-            onClick={() =>
-              navigate("/candidate/jobs")
-            }
+            style={{ marginTop: "25px" }}
+            onClick={() => navigate("/candidate/jobs")}
           >
             ← Back to Jobs
           </button>
-
         </div>
-
       </div>
     );
-
   }
-
 
   if (!job) {
     return null;
   }
-
 
   return (
     <div
@@ -1237,15 +1170,12 @@ function CandidateJobDetails() {
         padding: "50px 20px",
       }}
     >
-
       <div
         style={{
           maxWidth: "1100px",
           margin: "0 auto",
         }}
       >
-
-        {/* HEADER */}
 
         <div
           style={{
@@ -1256,45 +1186,24 @@ function CandidateJobDetails() {
             gap: "20px",
           }}
         >
-
           <div>
-
-            <p
-              style={{
-                color: "#6652e8",
-                fontWeight: "700",
-              }}
-            >
+            <p style={{ color: "#6652e8", fontWeight: "700" }}>
               CAREER OPPORTUNITY
             </p>
 
+            <h1>{job.job_title}</h1>
 
-            <h1>
-              {job.job_title}
-            </h1>
-
-
-            <p>
-              {job.company_name || "Company"}
-            </p>
-
+            <p>{job.company_name || "Company"}</p>
           </div>
-
 
           <button
             type="button"
             className="btn btn-outline"
-            onClick={() =>
-              navigate("/candidate/jobs")
-            }
+            onClick={() => navigate("/candidate/jobs")}
           >
             ← Back to Jobs
           </button>
-
         </div>
-
-
-        {/* JOB DETAILS */}
 
         <div
           style={{
@@ -1304,7 +1213,6 @@ function CandidateJobDetails() {
             marginBottom: "25px",
           }}
         >
-
           <div
             style={{
               display: "flex",
@@ -1313,34 +1221,14 @@ function CandidateJobDetails() {
               marginBottom: "30px",
             }}
           >
-
+            <span>📍 {job.location || "Location not specified"}</span>
+            <span>💼 {job.job_type || "Job type not specified"}</span>
             <span>
-              📍{" "}
-              {job.location ||
-                "Location not specified"}
+              🧑‍💻 {job.experience_required || "Experience not specified"}
             </span>
-
-
-            <span>
-              💼{" "}
-              {job.job_type ||
-                "Job type not specified"}
-            </span>
-
-
-            <span>
-              🧑‍💻{" "}
-              {job.experience_required ||
-                "Experience not specified"}
-            </span>
-
           </div>
 
-
-          <h2>
-            Job Description
-          </h2>
-
+          <h2>Job Description</h2>
 
           <p
             style={{
@@ -1349,19 +1237,10 @@ function CandidateJobDetails() {
               marginTop: "15px",
             }}
           >
-            {job.description ||
-              "No job description provided."}
+            {job.description || "No job description provided."}
           </p>
 
-
-          <h2
-            style={{
-              marginTop: "35px",
-            }}
-          >
-            Required Skills
-          </h2>
-
+          <h2 style={{ marginTop: "35px" }}>Required Skills</h2>
 
           <div
             style={{
@@ -1371,15 +1250,11 @@ function CandidateJobDetails() {
               marginTop: "15px",
             }}
           >
-
             {(job.required_skills || "")
               .split(",")
-              .map((skill) =>
-                skill.trim()
-              )
+              .map((skill) => skill.trim())
               .filter(Boolean)
               .map((skill) => (
-
                 <span
                   key={skill}
                   style={{
@@ -1392,15 +1267,9 @@ function CandidateJobDetails() {
                 >
                   {skill}
                 </span>
-
               ))}
-
           </div>
-
         </div>
-
-
-        {/* APPLICATION */}
 
         <div
           style={{
@@ -1409,11 +1278,7 @@ function CandidateJobDetails() {
             padding: "40px",
           }}
         >
-
-          <h2>
-            Apply for this position
-          </h2>
-
+          <h2>Apply for this position</h2>
 
           {error && (
             <div
@@ -1429,9 +1294,7 @@ function CandidateJobDetails() {
             </div>
           )}
 
-
           {applicationSuccess ? (
-
             <div
               style={{
                 padding: "25px",
@@ -1440,154 +1303,136 @@ function CandidateJobDetails() {
                 marginTop: "20px",
               }}
             >
+              <h3>✓ Application submitted</h3>
 
-              <h3>
-                ✓ Application submitted
-              </h3>
+              <p>You have already applied for this job.</p>
 
-
+              <p>Application ID: {applicationSuccess.id}</p>
+              <p>Resume ID: {applicationSuccess.resume_id}</p>
               <p>
-                You have already applied for this job.
+                Match Score: {applicationSuccess.match_score ?? "—"}%
               </p>
-
-
-              <p>
-                <strong>
-                  Application ID:
-                </strong>{" "}
-                {applicationSuccess.id}
-              </p>
-
-
-              <p>
-                <strong>
-                  Status:
-                </strong>{" "}
-                {applicationSuccess.status}
-              </p>
-
-
-              {applicationSuccess.match_score !==
-                null &&
-                applicationSuccess.match_score !==
-                  undefined && (
-
-                  <p>
-                    <strong>
-                      AI Match Score:
-                    </strong>{" "}
-                    {applicationSuccess.match_score}%
-                  </p>
-
-                )}
-
+              <p>Status: {applicationSuccess.status || "Applied"}</p>
 
               <div
                 style={{
                   display: "flex",
-                  flexWrap: "wrap",
                   gap: "12px",
+                  flexWrap: "wrap",
                   marginTop: "20px",
                 }}
               >
-
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() =>
-                    navigate("/candidate/dashboard")
-                  }
-                >
-                  Go to Dashboard
-                </button>
-
-
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() =>
-                    navigate("/candidate/applications")
-                  }
+                  onClick={() => navigate("/candidate/applications")}
                 >
                   View My Applications
                 </button>
 
-
                 <button
                   type="button"
                   className="btn btn-outline"
-                  onClick={() =>
-                    navigate("/candidate/jobs")
-                  }
+                  onClick={() => navigate("/candidate/jobs")}
                 >
                   Browse More Jobs
                 </button>
-
               </div>
-
             </div>
-
           ) : (
-
             <form
               onSubmit={applyForJob}
-              style={{
-                marginTop: "25px",
-              }}
+              style={{ marginTop: "25px" }}
             >
-
               <label>
-                <strong>
-                  Resume ID
-                </strong>
+                <strong>Select Resume</strong>
               </label>
 
+              {resumesLoading && (
+                <p
+                  style={{
+                    color: "#68708a",
+                    marginTop: "10px",
+                  }}
+                >
+                  Loading your resumes...
+                </p>
+              )}
 
-              <input
-                type="number"
-                min="1"
-                value={resumeId}
-                onChange={(event) =>
-                  setResumeId(
-                    event.target.value
-                  )
-                }
-                placeholder="Example: 1"
-                required
-                style={{
-                  width: "100%",
-                  padding: "14px",
-                  marginTop: "8px",
-                  marginBottom: "10px",
-                  boxSizing: "border-box",
-                }}
-              />
+              {!resumesLoading && resumes.length === 0 && (
+                <div
+                  style={{
+                    marginTop: "10px",
+                    padding: "16px",
+                    borderRadius: "10px",
+                    background: "#fff7e6",
+                    color: "#8a5a00",
+                  }}
+                >
+                  <p style={{ margin: 0 }}>
+                    No resume found. Please upload a resume before applying.
+                  </p>
 
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ marginTop: "12px" }}
+                    onClick={() => navigate("/candidate/resumes")}
+                  >
+                    Upload Resume
+                  </button>
+                </div>
+              )}
 
-              <p
-                style={{
-                  color: "#8a90a3",
-                  fontSize: "13px",
-                }}
-              >
-                Your current test resume ID is 1.
-              </p>
+              {!resumesLoading && resumes.length > 0 && (
+                <>
+                  <select
+                    value={resumeId}
+                    onChange={(event) => setResumeId(event.target.value)}
+                    required
+                    style={{
+                      width: "100%",
+                      padding: "14px",
+                      marginTop: "8px",
+                      marginBottom: "10px",
+                      boxSizing: "border-box",
+                      borderRadius: "10px",
+                      border: "1px solid #dfe3ee",
+                      background: "#fff",
+                      fontSize: "15px",
+                    }}
+                  >
+                    {resumes.map((resume) => (
+                      <option
+                        key={resume.id}
+                        value={String(resume.id)}
+                      >
+                        Resume #{resume.id} — {resume.original_filename || "Uploaded Resume"}
+                      </option>
+                    ))}
+                  </select>
 
+                  <p
+                    style={{
+                      color: "#68708a",
+                      fontSize: "13px",
+                      marginTop: "6px",
+                      marginBottom: "20px",
+                    }}
+                  >
+                    The latest uploaded resume is selected automatically.
+                    You can choose another resume if needed.
+                  </p>
+                </>
+              )}
 
               <label>
-                <strong>
-                  Cover Letter
-                </strong>
+                <strong>Cover Letter</strong>
               </label>
-
 
               <textarea
                 value={coverLetter}
-                onChange={(event) =>
-                  setCoverLetter(
-                    event.target.value
-                  )
-                }
+                onChange={(event) => setCoverLetter(event.target.value)}
                 placeholder="Write a short cover letter..."
                 rows={7}
                 style={{
@@ -1599,33 +1444,27 @@ function CandidateJobDetails() {
                 }}
               />
 
-
               <button
                 type="submit"
                 className="btn btn-primary btn-large"
-                disabled={applying}
+                disabled={
+                  applying ||
+                  resumesLoading ||
+                  resumes.length === 0
+                }
               >
                 {applying
                   ? "Submitting Application..."
                   : "Apply Now →"}
               </button>
-
             </form>
-
           )}
-
         </div>
-
       </div>
-
     </div>
   );
 }
 
-
-/* ============================================================
-   RECRUITER APPLICATIONS
-============================================================ */
 
 function RecruiterApplications() {
 
@@ -2721,6 +2560,639 @@ function RecruiterPlaceholder({
 
 
 /* ============================================================
+   RESUME ANALYSIS PAGE
+============================================================ */
+
+function ResumeAnalysisPage() {
+
+  const navigate = useNavigate();
+  const { resumeId } = useParams();
+
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+
+    let cancelled = false;
+
+    const loadAnalysis = async () => {
+
+      const token = localStorage.getItem("hireintel_token");
+
+      if (!token) {
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (!resumeId || !Number.isInteger(Number(resumeId)) || Number(resumeId) <= 0) {
+        setError("Invalid resume ID.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+
+        const response = await fetch(
+          `${API_BASE_URL}/resume-analysis/${resumeId}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/json",
+            },
+          }
+        );
+
+        const data = await response.json().catch(() => null);
+
+        if (response.status === 401) {
+          localStorage.removeItem("hireintel_token");
+          localStorage.removeItem("hireintel_role");
+          localStorage.removeItem("hireintel_user_id");
+          localStorage.removeItem("hireintel_email");
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        if (!response.ok) {
+          setError(
+            getErrorMessage(
+              data,
+              "Unable to load resume analysis."
+            )
+          );
+          return;
+        }
+
+        if (!cancelled) {
+          setAnalysis(data);
+          setError("");
+        }
+
+      } catch (requestError) {
+
+        console.error("Resume analysis error:", requestError);
+
+        if (!cancelled) {
+          setError(
+            "Unable to connect to the HireIntel AI server."
+          );
+        }
+
+      } finally {
+
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    const timerId = window.setTimeout(() => {
+      loadAnalysis();
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+
+  }, [resumeId, navigate]);
+
+  const splitItems = (value) => {
+    if (!value) {
+      return [];
+    }
+
+    return String(value)
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+
+  const lineItems = (value) => {
+    if (!value) {
+      return [];
+    }
+
+    return String(value)
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+
+  const score =
+    analysis?.resume_score !== null &&
+    analysis?.resume_score !== undefined
+      ? Number(analysis.resume_score)
+      : null;
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#f7f8fc",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "30px",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              width: "54px",
+              height: "54px",
+              borderRadius: "50%",
+              border: "5px solid #e8e5ff",
+              borderTopColor: "#6652e8",
+              margin: "0 auto 20px",
+              animation: "hireintel-spin 0.9s linear infinite",
+            }}
+          />
+          <h2 style={{ marginBottom: "8px" }}>
+            Loading Resume Intelligence...
+          </h2>
+          <p style={{ color: "#68708a" }}>
+            Fetching AI analysis for Resume #{resumeId}.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !analysis) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#f7f8fc",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "30px",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "650px",
+            background: "#fff",
+            borderRadius: "22px",
+            padding: "45px",
+            textAlign: "center",
+            boxShadow: "0 10px 35px rgba(40,40,80,0.07)",
+          }}
+        >
+          <div style={{ fontSize: "42px", marginBottom: "15px" }}>
+            ⚠️
+          </div>
+          <h1>Analysis Not Available</h1>
+          <p
+            style={{
+              color: "#68708a",
+              marginTop: "12px",
+              lineHeight: "1.7",
+            }}
+          >
+            {error || "No analysis was found for this resume."}
+          </p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ marginTop: "25px" }}
+            onClick={() => navigate("/candidate/resumes")}
+          >
+            ← Back to My Resumes
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f7f8fc",
+        padding: "45px 20px 70px",
+      }}
+    >
+      <style>{`
+        @keyframes hireintel-spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      <div
+        style={{
+          maxWidth: "1180px",
+          margin: "0 auto",
+        }}
+      >
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "20px",
+            flexWrap: "wrap",
+            marginBottom: "30px",
+          }}
+        >
+          <div>
+            <p
+              style={{
+                color: "#6652e8",
+                fontWeight: "800",
+                letterSpacing: "0.08em",
+                marginBottom: "8px",
+              }}
+            >
+              AI RESUME INTELLIGENCE
+            </p>
+            <h1 style={{ margin: 0 }}>
+              Resume Analysis
+            </h1>
+            <p
+              style={{
+                color: "#68708a",
+                marginTop: "8px",
+              }}
+            >
+              Detailed AI analysis for Resume #{resumeId}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => navigate("/candidate/resumes")}
+          >
+            ← My Resumes
+          </button>
+        </div>
+
+        {/* SCORE */}
+        <div
+          style={{
+            background: "linear-gradient(135deg, #6652e8, #7c6af0)",
+            color: "#fff",
+            borderRadius: "24px",
+            padding: "35px",
+            marginBottom: "22px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "30px",
+            flexWrap: "wrap",
+            boxShadow: "0 15px 35px rgba(102,82,232,0.18)",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: "14px",
+                fontWeight: "700",
+                opacity: 0.85,
+                marginBottom: "8px",
+              }}
+            >
+              OVERALL RESUME SCORE
+            </div>
+            <h2 style={{ margin: 0, fontSize: "24px" }}>
+              AI-powered resume evaluation
+            </h2>
+            <p
+              style={{
+                margin: "8px 0 0",
+                opacity: 0.85,
+              }}
+            >
+              Based on the extracted resume information.
+            </p>
+          </div>
+
+          <div
+            style={{
+              minWidth: "135px",
+              textAlign: "center",
+              background: "rgba(255,255,255,0.14)",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: "20px",
+              padding: "18px 22px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "44px",
+                lineHeight: 1,
+                fontWeight: "900",
+              }}
+            >
+              {score !== null && Number.isFinite(score)
+                ? `${score}%`
+                : "—"}
+            </div>
+            <div
+              style={{
+                marginTop: "7px",
+                fontSize: "13px",
+                fontWeight: "700",
+                opacity: 0.85,
+              }}
+            >
+              Resume Score
+            </div>
+          </div>
+        </div>
+
+        {/* SUMMARY */}
+        <section
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            padding: "30px",
+            marginBottom: "22px",
+            boxShadow: "0 5px 20px rgba(40,40,80,0.04)",
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>Professional Summary</h2>
+          <p
+            style={{
+              color: "#59627a",
+              lineHeight: "1.8",
+              whiteSpace: "pre-line",
+              marginBottom: 0,
+            }}
+          >
+            {analysis.summary || "No summary available."}
+          </p>
+        </section>
+
+        {/* SKILLS + KEYWORDS */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: "22px",
+            marginBottom: "22px",
+          }}
+        >
+          <section
+            style={{
+              background: "#fff",
+              borderRadius: "20px",
+              padding: "30px",
+              boxShadow: "0 5px 20px rgba(40,40,80,0.04)",
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>Skills</h2>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "9px",
+              }}
+            >
+              {splitItems(analysis.skills).length > 0 ? (
+                splitItems(analysis.skills).map((skill) => (
+                  <span
+                    key={skill}
+                    style={{
+                      padding: "9px 13px",
+                      borderRadius: "20px",
+                      background: "#f0edff",
+                      color: "#5e4ee5",
+                      fontWeight: "700",
+                      fontSize: "14px",
+                    }}
+                  >
+                    {skill}
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: "#8b91a5" }}>
+                  No skills extracted.
+                </span>
+              )}
+            </div>
+          </section>
+
+          <section
+            style={{
+              background: "#fff",
+              borderRadius: "20px",
+              padding: "30px",
+              boxShadow: "0 5px 20px rgba(40,40,80,0.04)",
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>Keywords</h2>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "9px",
+              }}
+            >
+              {splitItems(analysis.keywords).length > 0 ? (
+                splitItems(analysis.keywords).map((keyword) => (
+                  <span
+                    key={keyword}
+                    style={{
+                      padding: "9px 13px",
+                      borderRadius: "20px",
+                      background: "#eef8f4",
+                      color: "#137a55",
+                      fontWeight: "700",
+                      fontSize: "14px",
+                    }}
+                  >
+                    {keyword}
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: "#8b91a5" }}>
+                  No keywords extracted.
+                </span>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* EDUCATION / EXPERIENCE / PROJECTS / CERTIFICATIONS */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: "22px",
+            marginBottom: "22px",
+          }}
+        >
+          {[
+            ["Education", analysis.education],
+            ["Experience", analysis.experience],
+            ["Projects", analysis.projects],
+            ["Certifications", analysis.certifications],
+          ].map(([title, value]) => (
+            <section
+              key={title}
+              style={{
+                background: "#fff",
+                borderRadius: "20px",
+                padding: "30px",
+                boxShadow: "0 5px 20px rgba(40,40,80,0.04)",
+              }}
+            >
+              <h2 style={{ marginTop: 0 }}>{title}</h2>
+              <p
+                style={{
+                  color: "#59627a",
+                  lineHeight: "1.8",
+                  whiteSpace: "pre-line",
+                  margin: 0,
+                }}
+              >
+                {value || `No ${title.toLowerCase()} information available.`}
+              </p>
+            </section>
+          ))}
+        </div>
+
+        {/* STRENGTHS / WEAKNESSES */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: "22px",
+            marginBottom: "22px",
+          }}
+        >
+          <section
+            style={{
+              background: "#fff",
+              borderRadius: "20px",
+              padding: "30px",
+              border: "1px solid #e2f3ea",
+              boxShadow: "0 5px 20px rgba(40,40,80,0.04)",
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>Strengths</h2>
+            {lineItems(analysis.strengths).length > 0 ? (
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: "22px",
+                  color: "#42506a",
+                  lineHeight: "1.8",
+                }}
+              >
+                {lineItems(analysis.strengths).map((item, index) => (
+                  <li key={`${item}-${index}`} style={{ marginBottom: "8px" }}>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ color: "#8b91a5" }}>No strengths available.</p>
+            )}
+          </section>
+
+          <section
+            style={{
+              background: "#fff",
+              borderRadius: "20px",
+              padding: "30px",
+              border: "1px solid #f4e6e6",
+              boxShadow: "0 5px 20px rgba(40,40,80,0.04)",
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>Areas to Improve</h2>
+            {lineItems(analysis.weaknesses).length > 0 ? (
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: "22px",
+                  color: "#42506a",
+                  lineHeight: "1.8",
+                }}
+              >
+                {lineItems(analysis.weaknesses).map((item, index) => (
+                  <li key={`${item}-${index}`} style={{ marginBottom: "8px" }}>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ color: "#8b91a5" }}>
+                No improvement areas available.
+              </p>
+            )}
+          </section>
+        </div>
+
+        {/* RECOMMENDATIONS */}
+        <section
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            padding: "30px",
+            boxShadow: "0 5px 20px rgba(40,40,80,0.04)",
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>AI Recommendations</h2>
+          {lineItems(analysis.recommendations).length > 0 ? (
+            <div style={{ display: "grid", gap: "12px" }}>
+              {lineItems(analysis.recommendations).map((item, index) => (
+                <div
+                  key={`${item}-${index}`}
+                  style={{
+                    padding: "15px 17px",
+                    borderRadius: "12px",
+                    background: "#f8f7ff",
+                    color: "#46506a",
+                    lineHeight: "1.7",
+                  }}
+                >
+                  <strong style={{ color: "#6652e8", marginRight: "8px" }}>
+                    {index + 1}.
+                  </strong>
+                  {item}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: "#8b91a5" }}>
+              No recommendations available.
+            </p>
+          )}
+        </section>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            marginTop: "30px",
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => navigate("/candidate/resumes")}
+          >
+            ← Back to My Resumes
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+
+/* ============================================================
    ROUTER
 ============================================================ */
 
@@ -2872,6 +3344,16 @@ function App() {
       <Route
         path="/candidate/resumes"
         element={<CandidateResumes />}
+      />
+
+
+      {/* ======================================================
+          CANDIDATE RESUME ANALYSIS
+      ====================================================== */}
+
+      <Route
+        path="/candidate/resume-analysis/:resumeId"
+        element={<ResumeAnalysisPage />}
       />
 
 

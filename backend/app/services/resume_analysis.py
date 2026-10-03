@@ -185,4 +185,4 @@ def get_resume_analysis(
             detail="Resume analysis not found.",
         )
 
-    return analysis
+    return analysis 

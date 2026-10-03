@@ -34,6 +34,60 @@ router = APIRouter(
 
 
 # ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def normalize_text(value):
+    """
+    Normalize normal text for duplicate comparison.
+
+    Examples:
+
+        "Python Developer"
+        "python developer"
+        "  Python Developer  "
+
+    all become:
+
+        "python developer"
+    """
+    if value is None:
+        return ""
+
+    return " ".join(
+        str(value).strip().lower().split()
+    )
+
+
+def normalize_skills(value):
+    """
+    Normalize comma-separated skills.
+
+    Example:
+
+        Python, SQL, FastAPI
+
+    and:
+
+        FastAPI, Python, SQL
+
+    are treated as the same skill set.
+    """
+    if not value:
+        return ""
+
+    skills = [
+        skill.strip().lower()
+        for skill in str(value).split(",")
+        if skill.strip()
+    ]
+
+    return ", ".join(
+        sorted(set(skills))
+    )
+
+
+# ============================================================
 # CREATE JOB
 # ============================================================
 
@@ -47,6 +101,7 @@ def create_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+
     # --------------------------------------------------------
     # Only recruiters can create jobs
     # --------------------------------------------------------
@@ -58,7 +113,105 @@ def create_job(
         )
 
     # --------------------------------------------------------
-    # Create job
+    # Normalize new job data
+    # --------------------------------------------------------
+
+    new_job_title = normalize_text(
+        job_data.job_title
+    )
+
+    new_company_name = normalize_text(
+        job_data.company_name
+    )
+
+    new_location = normalize_text(
+        job_data.location
+    )
+
+    new_job_type = normalize_text(
+        job_data.job_type
+    )
+
+    new_experience = normalize_text(
+        job_data.experience_required
+    )
+
+    new_skills = normalize_skills(
+        job_data.required_skills
+    )
+
+    # --------------------------------------------------------
+    # Check existing jobs created by this recruiter
+    # --------------------------------------------------------
+
+    existing_jobs = (
+        db.query(Job)
+        .filter(
+            Job.user_id == current_user.id
+        )
+        .all()
+    )
+
+    for existing_job in existing_jobs:
+
+        same_job_title = (
+            normalize_text(existing_job.job_title)
+            == new_job_title
+        )
+
+        same_company = (
+            normalize_text(existing_job.company_name)
+            == new_company_name
+        )
+
+        same_location = (
+            normalize_text(existing_job.location)
+            == new_location
+        )
+
+        same_job_type = (
+            normalize_text(existing_job.job_type)
+            == new_job_type
+        )
+
+        same_experience = (
+            normalize_text(
+                existing_job.experience_required
+            )
+            == new_experience
+        )
+
+        same_skills = (
+            normalize_skills(
+                existing_job.required_skills
+            )
+            == new_skills
+        )
+
+        # ----------------------------------------------------
+        # Duplicate job found
+        #
+        # Description is intentionally NOT compared.
+        # ----------------------------------------------------
+
+        if (
+            same_job_title
+            and same_company
+            and same_location
+            and same_job_type
+            and same_experience
+            and same_skills
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "A job with the same details already "
+                    f"exists. Existing Job ID: {existing_job.id}"
+                ),
+            )
+
+    # --------------------------------------------------------
+    # Create new job
     # --------------------------------------------------------
 
     job = Job(
@@ -82,7 +235,7 @@ def create_job(
         db.rollback()
 
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Could not create job: {error}",
         )
 
@@ -101,9 +254,6 @@ def get_my_jobs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # --------------------------------------------------------
-    # Only recruiters can view recruiter jobs
-    # --------------------------------------------------------
 
     if current_user.role != "recruiter":
         raise HTTPException(
@@ -116,7 +266,9 @@ def get_my_jobs(
         .filter(
             Job.user_id == current_user.id
         )
-        .order_by(Job.created_at.desc())
+        .order_by(
+            Job.created_at.desc()
+        )
         .all()
     )
 
@@ -136,9 +288,6 @@ def get_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # --------------------------------------------------------
-    # Only recruiters can view recruiter job details
-    # --------------------------------------------------------
 
     if current_user.role != "recruiter":
         raise HTTPException(
@@ -178,19 +327,12 @@ def update_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # --------------------------------------------------------
-    # Only recruiters can update jobs
-    # --------------------------------------------------------
 
     if current_user.role != "recruiter":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only recruiters can update jobs.",
         )
-
-    # --------------------------------------------------------
-    # Find recruiter-owned job
-    # --------------------------------------------------------
 
     job = (
         db.query(Job)
@@ -207,10 +349,6 @@ def update_job(
             detail="Job not found.",
         )
 
-    # --------------------------------------------------------
-    # Update only fields supplied by recruiter
-    # --------------------------------------------------------
-
     update_data = job_data.model_dump(
         exclude_unset=True
     )
@@ -226,7 +364,7 @@ def update_job(
         db.rollback()
 
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Could not update job: {error}",
         )
 
@@ -245,19 +383,12 @@ def delete_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # --------------------------------------------------------
-    # Only recruiters can delete jobs
-    # --------------------------------------------------------
 
     if current_user.role != "recruiter":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only recruiters can delete jobs.",
         )
-
-    # --------------------------------------------------------
-    # Find recruiter-owned job
-    # --------------------------------------------------------
 
     job = (
         db.query(Job)
@@ -301,7 +432,7 @@ def delete_job(
         db.rollback()
 
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Could not delete job: {error}",
         )
 
@@ -325,13 +456,10 @@ def get_ranked_candidates(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # --------------------------------------------------------
-    # Only recruiters can access candidate rankings
-    # --------------------------------------------------------
 
     if current_user.role != "recruiter":
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Only recruiters can access candidate rankings.",
         )
 
@@ -350,7 +478,7 @@ def get_ranked_candidates(
 
     if job is None:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found.",
         )
 

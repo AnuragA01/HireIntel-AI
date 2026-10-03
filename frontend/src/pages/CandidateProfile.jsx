@@ -10,6 +10,20 @@ function CandidateProfile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+
+  const [formData, setFormData] = useState({
+    full_name: "",
+    phone: "",
+    location: "",
+    education: "",
+    experience: "",
+    skills: "",
+    bio: "",
+  });
+
   // ============================================================
   // LOAD PROFILE
   // ============================================================
@@ -182,21 +196,48 @@ function CandidateProfile() {
       : true;
 
   // ============================================================
-  // INFORMATION NOT CURRENTLY PROVIDED BY BACKEND
+  // PROFILE INFORMATION
   // ============================================================
 
-  const phone = "Not added";
+  const phone = getValue(
+    userProfile.phone,
+    "Not added"
+  );
 
-  const location = "Not added";
+  const location = getValue(
+    userProfile.location,
+    "Not added"
+  );
 
-  const education = "Not added";
+  const education = getValue(
+    userProfile.education,
+    "Not added"
+  );
 
-  const experience = "Not added";
+  const experience = getValue(
+    userProfile.experience,
+    "Not added"
+  );
 
-  const skills = [];
+  const skillsValue = getValue(
+    userProfile.skills,
+    ""
+  );
 
-  const bio =
-    "Your professional summary can be added when profile editing is implemented.";
+  const skills =
+    Array.isArray(skillsValue)
+      ? skillsValue
+      : typeof skillsValue === "string"
+        ? skillsValue
+            .split(",")
+            .map((skill) => skill.trim())
+            .filter(Boolean)
+        : [];
+
+  const bio = getValue(
+    userProfile.bio,
+    "Add a professional summary to tell recruiters about your background and career goals."
+  );
 
   // ============================================================
   // INITIALS
@@ -238,6 +279,142 @@ function CandidateProfile() {
     latestResume?.resume_score,
     "Not analyzed"
   );
+
+  // ============================================================
+  // EDIT PROFILE
+  // ============================================================
+
+  const openEditProfile = () => {
+    setFormData({
+      full_name: userProfile.full_name || "",
+      phone: userProfile.phone || "",
+      location: userProfile.location || "",
+      education: userProfile.education || "",
+      experience: userProfile.experience || "",
+      skills: userProfile.skills || "",
+      bio: userProfile.bio || "",
+    });
+
+    setSaveMessage("");
+    setError("");
+    setIsEditing(true);
+  };
+
+  const closeEditProfile = () => {
+    if (!saving) {
+      setIsEditing(false);
+      setSaveMessage("");
+    }
+  };
+
+  const handleFormChange = (event) => {
+    const { name, value } = event.target;
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const saveProfile = async (event) => {
+    event.preventDefault();
+
+    const token = localStorage.getItem("hireintel_token");
+
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (!formData.full_name.trim()) {
+      setSaveMessage("Full name is required.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setSaveMessage("");
+      setError("");
+
+      const response = await fetch(
+        `${API_BASE_URL}/profile/me`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            full_name: formData.full_name.trim(),
+            phone: formData.phone.trim(),
+            location: formData.location.trim(),
+            education: formData.education.trim(),
+            experience: formData.experience.trim(),
+            skills: formData.skills.trim(),
+            bio: formData.bio.trim(),
+          }),
+        }
+      );
+
+      const data = await response.json().catch(() => null);
+
+      if (response.status === 401) {
+        localStorage.removeItem("hireintel_token");
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (!response.ok) {
+        let message = "Unable to update your profile.";
+
+        if (typeof data?.detail === "string") {
+          message = data.detail;
+        } else if (Array.isArray(data?.detail)) {
+          message = data.detail
+            .map(
+              (item) =>
+                item?.msg || "Invalid request."
+            )
+            .join(", ");
+        }
+
+        throw new Error(message);
+      }
+
+      const updatedProfile =
+        data?.profile || {
+          ...userProfile,
+          ...formData,
+        };
+
+      setProfileData((previous) => ({
+        ...(previous || {}),
+        profile: updatedProfile,
+      }));
+
+      setSaveMessage(
+        "Profile updated successfully."
+      );
+
+      setTimeout(() => {
+        setIsEditing(false);
+        setSaveMessage("");
+      }, 900);
+    } catch (requestError) {
+      console.error(
+        "Profile update error:",
+        requestError
+      );
+
+      setSaveMessage(
+        requestError?.message ||
+          "Unable to update your profile."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ============================================================
   // LOGOUT
@@ -446,17 +623,27 @@ function CandidateProfile() {
 
           </div>
 
-          <button
-            type="button"
-            style={styles.primaryButton}
-            onClick={() =>
-              navigate(
-                "/candidate/resumes"
-              )
-            }
-          >
-            Manage Resume →
-          </button>
+          <div style={styles.headerActions}>
+            <button
+              type="button"
+              style={styles.outlineButton}
+              onClick={openEditProfile}
+            >
+              ✎ Edit Profile
+            </button>
+
+            <button
+              type="button"
+              style={styles.primaryButton}
+              onClick={() =>
+                navigate(
+                  "/candidate/resumes"
+                )
+              }
+            >
+              Manage Resume →
+            </button>
+          </div>
 
         </header>
 
@@ -472,13 +659,25 @@ function CandidateProfile() {
 
           <div style={styles.heroInfo}>
 
-            <h2 style={styles.heroName}>
-              {name}
-            </h2>
+            <div style={styles.heroTopRow}>
+              <div>
+                <h2 style={styles.heroName}>
+                  {name}
+                </h2>
 
-            <p style={styles.heroEmail}>
-              {email}
-            </p>
+                <p style={styles.heroEmail}>
+                  {email}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                style={styles.heroEditButton}
+                onClick={openEditProfile}
+              >
+                Edit
+              </button>
+            </div>
 
             <div style={styles.heroTags}>
 
@@ -1078,6 +1277,200 @@ function CandidateProfile() {
           </button>
 
         </section>
+
+        {/* ====================================================
+            EDIT PROFILE MODAL
+        ==================================================== */}
+
+        {isEditing && (
+          <div
+            style={styles.modalOverlay}
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                closeEditProfile();
+              }
+            }}
+          >
+            <div style={styles.modalCard}>
+              <div style={styles.modalHeader}>
+                <div>
+                  <p style={styles.cardEyebrow}>
+                    ACCOUNT SETTINGS
+                  </p>
+
+                  <h2 style={styles.modalTitle}>
+                    Edit Profile
+                  </h2>
+
+                  <p style={styles.modalSubtitle}>
+                    Keep your candidate information updated for recruiters and HireIntel AI matching.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  style={styles.closeButton}
+                  onClick={closeEditProfile}
+                  disabled={saving}
+                >
+                  ×
+                </button>
+              </div>
+
+              <form onSubmit={saveProfile}>
+                <div style={styles.formGrid}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>
+                      Full Name *
+                    </label>
+                    <input
+                      name="full_name"
+                      value={formData.full_name}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                      placeholder="Enter your full name"
+                      maxLength={100}
+                      required
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>
+                      Email
+                    </label>
+                    <input
+                      value={email}
+                      style={styles.formInputDisabled}
+                      disabled
+                    />
+                    <small style={styles.formHint}>
+                      Email is managed by your account.
+                    </small>
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>
+                      Phone
+                    </label>
+                    <input
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                      placeholder="+91 9876543210"
+                      maxLength={20}
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>
+                      Location
+                    </label>
+                    <input
+                      name="location"
+                      value={formData.location}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                      placeholder="Bangalore, Karnataka"
+                      maxLength={150}
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>
+                      Education
+                    </label>
+                    <input
+                      name="education"
+                      value={formData.education}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                      placeholder="B.Tech Computer Science Engineering"
+                      maxLength={200}
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>
+                      Experience
+                    </label>
+                    <input
+                      name="experience"
+                      value={formData.experience}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                      placeholder="Fresher / 0-1 years"
+                      maxLength={100}
+                    />
+                  </div>
+
+                  <div style={styles.formGroupFull}>
+                    <label style={styles.formLabel}>
+                      Skills
+                    </label>
+                    <input
+                      name="skills"
+                      value={formData.skills}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                      placeholder="Python, Java, React.js, Node.js, SQL, MySQL, FastAPI, Git"
+                    />
+                    <small style={styles.formHint}>
+                      Separate skills with commas.
+                    </small>
+                  </div>
+
+                  <div style={styles.formGroupFull}>
+                    <label style={styles.formLabel}>
+                      Professional Summary
+                    </label>
+                    <textarea
+                      name="bio"
+                      value={formData.bio}
+                      onChange={handleFormChange}
+                      style={styles.formTextarea}
+                      placeholder="Write a short professional summary."
+                      rows={5}
+                    />
+                  </div>
+                </div>
+
+                {saveMessage && (
+                  <div
+                    style={
+                      saveMessage.includes("successfully")
+                        ? styles.successMessage
+                        : styles.formError
+                    }
+                  >
+                    {saveMessage}
+                  </div>
+                )}
+
+                <div style={styles.modalFooter}>
+                  <button
+                    type="button"
+                    style={styles.cancelButton}
+                    onClick={closeEditProfile}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    style={styles.primaryButton}
+                    disabled={saving}
+                  >
+                    {saving
+                      ? "Saving..."
+                      : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
       </main>
     </div>
@@ -1709,6 +2102,200 @@ const styles = {
     fontSize: "13px",
     lineHeight: "1.6",
     margin: 0,
+  },
+
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+
+  heroTopRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "20px",
+  },
+
+  heroEditButton: {
+    border: "1px solid #dcd7f8",
+    background: "#ffffff",
+    color: "#6657e8",
+    padding: "8px 14px",
+    borderRadius: "9px",
+    fontWeight: "700",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(20, 24, 38, 0.48)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "24px",
+    zIndex: 1000,
+    overflowY: "auto",
+    boxSizing: "border-box",
+  },
+
+  modalCard: {
+    width: "100%",
+    maxWidth: "820px",
+    maxHeight: "92vh",
+    overflowY: "auto",
+    background: "#ffffff",
+    borderRadius: "22px",
+    padding: "28px",
+    boxSizing: "border-box",
+    boxShadow: "0 24px 80px rgba(28, 32, 48, 0.22)",
+  },
+
+  modalHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "20px",
+    marginBottom: "24px",
+  },
+
+  modalTitle: {
+    margin: 0,
+    fontSize: "26px",
+    fontWeight: "800",
+  },
+
+  modalSubtitle: {
+    margin: "8px 0 0",
+    color: "#747b8c",
+    fontSize: "13px",
+    lineHeight: "1.6",
+    maxWidth: "620px",
+  },
+
+  closeButton: {
+    width: "38px",
+    height: "38px",
+    borderRadius: "10px",
+    border: "1px solid #e4e6ec",
+    background: "#ffffff",
+    color: "#5f6676",
+    fontSize: "24px",
+    lineHeight: 1,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  formGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "18px",
+  },
+
+  formGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "7px",
+  },
+
+  formGroupFull: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "7px",
+    gridColumn: "1 / -1",
+  },
+
+  formLabel: {
+    fontSize: "12px",
+    fontWeight: "700",
+    color: "#41495a",
+  },
+
+  formInput: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #dfe2ea",
+    borderRadius: "10px",
+    padding: "12px 13px",
+    fontSize: "13px",
+    color: "#172033",
+    background: "#ffffff",
+    outline: "none",
+  },
+
+  formInputDisabled: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #e8eaf0",
+    borderRadius: "10px",
+    padding: "12px 13px",
+    fontSize: "13px",
+    color: "#858b9b",
+    background: "#f7f8fb",
+    outline: "none",
+  },
+
+  formTextarea: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #dfe2ea",
+    borderRadius: "10px",
+    padding: "12px 13px",
+    fontSize: "13px",
+    color: "#172033",
+    background: "#ffffff",
+    outline: "none",
+    resize: "vertical",
+    fontFamily: "inherit",
+    lineHeight: "1.6",
+  },
+
+  formHint: {
+    color: "#8a91a0",
+    fontSize: "11px",
+  },
+
+  successMessage: {
+    marginTop: "18px",
+    padding: "12px 14px",
+    borderRadius: "10px",
+    background: "#eaf8ef",
+    color: "#21894e",
+    fontSize: "13px",
+    fontWeight: "700",
+  },
+
+  formError: {
+    marginTop: "18px",
+    padding: "12px 14px",
+    borderRadius: "10px",
+    background: "#fff1f1",
+    color: "#c53f3f",
+    fontSize: "13px",
+    fontWeight: "700",
+  },
+
+  modalFooter: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "10px",
+    marginTop: "24px",
+    paddingTop: "18px",
+    borderTop: "1px solid #eef0f4",
+  },
+
+  cancelButton: {
+    border: "1px solid #dfe2ea",
+    background: "#ffffff",
+    color: "#5f6676",
+    padding: "12px 18px",
+    borderRadius: "10px",
+    fontWeight: "700",
+    cursor: "pointer",
   },
 
   centerPage: {
