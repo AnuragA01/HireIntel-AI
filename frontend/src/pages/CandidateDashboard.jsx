@@ -16,6 +16,8 @@ function CandidateDashboard() {
   const token = localStorage.getItem("hireintel_token");
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!token) {
       navigate("/login", { replace: true });
       return;
@@ -159,7 +161,9 @@ function CandidateDashboard() {
             };
           });
 
-        setApplicationJobs(jobMap);
+        if (!cancelled) {
+          setApplicationJobs(jobMap);
+        }
 
         const enrichedDashboard = {
           ...dashboardData,
@@ -256,6 +260,10 @@ function CandidateDashboard() {
     };
 
     loadDashboard();
+
+    return () => {
+      cancelled = true;
+    };
   }, [navigate, token]);
 
   const logout = () => {
@@ -388,40 +396,22 @@ function CandidateDashboard() {
     dashboard?.applications ||
     [];
 
-  /*
-    ============================================================
-    AI JOB MATCHES
-    ============================================================
+  /* ============================================================
+     AI JOB MATCHES
+     Normalize and deduplicate matches before rendering.
 
-    The backend may return duplicate JobMatch records for the
-    same job. The dashboard should never display the same job
-    more than once.
+     The backend can return multiple match records for the same job
+     when the candidate has multiple resumes. We keep only one
+     record per real job and preserve the highest match score.
+  ============================================================ */
 
-    Rules:
-    1. Read both job_matches and matches when available.
-    2. Combine the records.
-    3. Identify the job using job_id.
-    4. If the same job appears multiple times, keep the
-       record with the highest match score.
-    5. Sort the final list from highest score to lowest score.
-  */
-
-  const dashboardJobMatches = Array.isArray(
+  const rawJobMatches = Array.isArray(
     dashboard?.job_matches
   )
     ? dashboard.job_matches
-    : [];
-
-  const dashboardMatches = Array.isArray(
-    dashboard?.matches
-  )
-    ? dashboard.matches
-    : [];
-
-  const rawJobMatches = [
-    ...dashboardJobMatches,
-    ...dashboardMatches,
-  ];
+    : Array.isArray(dashboard?.matches)
+      ? dashboard.matches
+      : [];
 
   const jobMatchMap = new Map();
 
@@ -433,17 +423,44 @@ function CandidateDashboard() {
     const jobId =
       match?.job_id ??
       match?.job?.id ??
-      match?.id;
+      match?.job?.job_id ??
+      null;
 
-    if (
-      jobId === undefined ||
-      jobId === null ||
-      jobId === ""
-    ) {
+    const jobTitle = String(
+      match?.job_title ??
+        match?.title ??
+        match?.job?.job_title ??
+        match?.job?.title ??
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+    const companyName = String(
+      match?.company_name ??
+        match?.company ??
+        match?.job?.company_name ??
+        match?.job?.company ??
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+    /*
+      Prefer the real job ID.
+
+      If an API response does not contain job_id, use the normalized
+      job title + company as a fallback identity.
+    */
+    const key = jobId
+      ? `job-${jobId}`
+      : jobTitle || companyName
+        ? `job-${jobTitle}-${companyName}`
+        : null;
+
+    if (!key) {
       return;
     }
-
-    const key = String(jobId);
 
     const currentScore = Number(
       match?.match_score ??
@@ -452,31 +469,27 @@ function CandidateDashboard() {
         0
     );
 
-    const safeCurrentScore =
-      Number.isFinite(currentScore)
-        ? currentScore
-        : 0;
+    const existingMatch = jobMatchMap.get(key);
 
-    const existing = jobMatchMap.get(key);
-
-    if (!existing) {
+    if (!existingMatch) {
       jobMatchMap.set(key, match);
       return;
     }
 
     const existingScore = Number(
-      existing?.match_score ??
-        existing?.score ??
-        existing?.match_percentage ??
+      existingMatch?.match_score ??
+        existingMatch?.score ??
+        existingMatch?.match_percentage ??
         0
     );
 
-    const safeExistingScore =
-      Number.isFinite(existingScore)
-        ? existingScore
-        : 0;
-
-    if (safeCurrentScore > safeExistingScore) {
+    /*
+      Keep the highest score for the same job.
+      If scores are equal, keep the newest/later record.
+    */
+    if (
+      currentScore >= existingScore
+    ) {
       jobMatchMap.set(key, match);
     }
   });
@@ -498,10 +511,7 @@ function CandidateDashboard() {
         0
     );
 
-    return (
-      (Number.isFinite(scoreB) ? scoreB : 0) -
-      (Number.isFinite(scoreA) ? scoreA : 0)
-    );
+    return scoreB - scoreA;
   });
 
   return (
@@ -579,6 +589,17 @@ function CandidateDashboard() {
           >
             <span>✦</span>
             Job Matches
+          </button>
+
+          <button
+            type="button"
+            style={styles.navItem}
+            onClick={() =>
+              navigate("/candidate/career-intelligence")
+            }
+          >
+            <span>🧠</span>
+            Career Intelligence
           </button>
 
           <button
@@ -702,6 +723,52 @@ function CandidateDashboard() {
             My Applications
           </button>
 
+          <button
+            type="button"
+            style={styles.aiAction}
+            onClick={() =>
+              navigate("/candidate/career-intelligence")
+            }
+          >
+            <span>🧠</span>
+            Career Intelligence
+          </button>
+
+        </section>
+
+
+        {/* =====================================================
+            CAREER INTELLIGENCE
+        ===================================================== */}
+
+        <section style={styles.intelligenceBanner}>
+          <div style={styles.intelligenceIcon}>🧠</div>
+
+          <div style={styles.intelligenceContent}>
+            <p style={styles.intelligenceLabel}>
+              AI CAREER INTELLIGENCE
+            </p>
+
+            <h2 style={styles.intelligenceTitle}>
+              Check your resume against any job description
+            </h2>
+
+            <p style={styles.intelligenceDescription}>
+              Paste a job description and get an AI-powered match score,
+              matched skills, missing skills, keyword insights, experience
+              match and personalized recommendations.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            style={styles.intelligenceButton}
+            onClick={() =>
+              navigate("/candidate/career-intelligence")
+            }
+          >
+            Analyze Job Match →
+          </button>
         </section>
 
 
@@ -970,19 +1037,42 @@ function CandidateDashboard() {
 
                 {jobMatches
                   .slice(0, 4)
-                  .map((match, index) => {
+                  .map((match) => {
 
-                    const score =
-                      match.match_score ??
-                      match.score ??
-                      match.match_percentage ??
+                    const rawScore =
+                      match?.match_score ??
+                      match?.score ??
+                      match?.match_percentage ??
                       0;
+
+                    const score = Number.isFinite(
+                      Number(rawScore)
+                    )
+                      ? Math.round(Number(rawScore) * 100) / 100
+                      : 0;
 
                     return (
                       <div
                         key={
                           match.id ||
-                          index
+                          match.job_id ||
+                          `${String(
+                            match.job_title ||
+                              match.title ||
+                              match.job?.job_title ||
+                              match.job?.title ||
+                              "job"
+                          )
+                            .trim()
+                            .toLowerCase()}-${String(
+                            match.company_name ||
+                              match.company ||
+                              match.job?.company_name ||
+                              match.job?.company ||
+                              ""
+                          )
+                            .trim()
+                            .toLowerCase()}`
                         }
                         style={styles.matchItem}
                       >
@@ -1349,6 +1439,79 @@ const styles = {
     borderRadius: "10px",
     fontWeight: "700",
     cursor: "pointer",
+  },
+
+  aiAction: {
+    border: "1px solid #ddd7ff",
+    background: "#f5f2ff",
+    color: "#5e4bdc",
+    padding: "13px 20px",
+    borderRadius: "10px",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+
+  intelligenceBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: "20px",
+    background: "linear-gradient(135deg, #6657e8, #7c6cf0)",
+    color: "#ffffff",
+    borderRadius: "18px",
+    padding: "24px 26px",
+    marginBottom: "25px",
+    boxShadow: "0 12px 30px rgba(102, 87, 232, 0.16)",
+    flexWrap: "wrap",
+  },
+
+  intelligenceIcon: {
+    width: "54px",
+    height: "54px",
+    borderRadius: "15px",
+    background: "rgba(255,255,255,0.16)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "25px",
+    flexShrink: 0,
+  },
+
+  intelligenceContent: {
+    flex: 1,
+    minWidth: "280px",
+  },
+
+  intelligenceLabel: {
+    margin: 0,
+    fontSize: "11px",
+    fontWeight: "800",
+    letterSpacing: "1.2px",
+    opacity: 0.85,
+  },
+
+  intelligenceTitle: {
+    margin: "5px 0 7px",
+    fontSize: "20px",
+    fontWeight: "800",
+  },
+
+  intelligenceDescription: {
+    margin: 0,
+    lineHeight: "1.6",
+    fontSize: "13px",
+    opacity: 0.9,
+    maxWidth: "760px",
+  },
+
+  intelligenceButton: {
+    border: "none",
+    background: "#ffffff",
+    color: "#5d4ddd",
+    padding: "13px 18px",
+    borderRadius: "10px",
+    fontWeight: "800",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
 
   statsGrid: {

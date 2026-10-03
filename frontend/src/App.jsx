@@ -19,6 +19,7 @@ import CandidateResumes from "./pages/CandidateResumes";
 import CandidateJobMatches from "./pages/CandidateJobMatches";
 import CandidateProfile from "./pages/CandidateProfile";
 import CandidateSettings from "./pages/CandidateSettings";
+import CareerIntelligence from "./pages/CareerIntelligence";
 
 import RecruiterDashboard from "./pages/RecruiterDashboard";
 import RecruiterCandidateMatches from "./pages/RecruiterCandidateMatches";
@@ -3354,6 +3355,16 @@ function App() {
       <Route
         path="/candidate/resume-analysis/:resumeId"
         element={<ResumeAnalysisPage />}
+      />
+
+
+      {/* ======================================================
+          CANDIDATE CAREER INTELLIGENCE
+          ====================================================== */}
+
+      <Route
+        path="/candidate/career-intelligence"
+        element={<CareerIntelligence />}
       />
 
 
