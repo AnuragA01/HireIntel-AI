@@ -23,6 +23,8 @@ import CareerIntelligence from "./pages/CareerIntelligence";
 
 import RecruiterDashboard from "./pages/RecruiterDashboard";
 import RecruiterCandidateMatches from "./pages/RecruiterCandidateMatches";
+import RecruiterJobs from "./pages/RecruiterJobs";
+import RecruiterPostJob from "./pages/RecruiterPostJob";
 
 
 const API_BASE_URL = "http://127.0.0.1:8000";
@@ -3198,11 +3200,12 @@ function ResumeAnalysisPage() {
 ============================================================ */
 
 function App() {
-
   return (
     <Routes>
 
-      {/* HOME */}
+      {/* ======================================================
+          HOME
+      ====================================================== */}
 
       <Route
         path="/"
@@ -3210,7 +3213,9 @@ function App() {
       />
 
 
-      {/* LOGIN */}
+      {/* ======================================================
+          LOGIN
+      ====================================================== */}
 
       <Route
         path="/login"
@@ -3228,41 +3233,51 @@ function App() {
       />
 
 
-      {/* THIS WAS MISSING — NOW FIXED */}
-
       <Route
         path="/recruiter/applications"
         element={<RecruiterApplications />}
       />
 
 
+      {/* ======================================================
+          RECRUITER JOBS
+      ====================================================== */}
+
       <Route
         path="/recruiter/jobs"
         element={
-          <RecruiterPlaceholder
-            title="My Jobs"
-            description="Manage the jobs posted by your recruiter account."
-          />
+          <RecruiterJobs />
         }
       />
 
+
+      {/* ======================================================
+          POST NEW JOB
+      ====================================================== */}
 
       <Route
         path="/recruiter/post-job"
         element={
-          <RecruiterPlaceholder
-            title="Post New Job"
-            description="Create and publish a new job opportunity for candidates."
-          />
+          <RecruiterPostJob />
         }
       />
 
 
+      {/* ======================================================
+          RECRUITER MATCHES
+      ====================================================== */}
+
       <Route
         path="/recruiter/matches"
-        element={<RecruiterCandidateMatches />}
+        element={
+          <RecruiterCandidateMatches />
+        }
       />
 
+
+      {/* ======================================================
+          RECRUITER PROFILE
+      ====================================================== */}
 
       <Route
         path="/recruiter/profile"
@@ -3274,6 +3289,10 @@ function App() {
         }
       />
 
+
+      {/* ======================================================
+          RECRUITER SETTINGS
+      ====================================================== */}
 
       <Route
         path="/recruiter/settings"
@@ -3292,7 +3311,9 @@ function App() {
 
       <Route
         path="/candidate/dashboard"
-        element={<CandidateDashboard />}
+        element={
+          <CandidateDashboard />
+        }
       />
 
 
@@ -3302,19 +3323,25 @@ function App() {
 
       <Route
         path="/candidate/jobs"
-        element={<FindJobs />}
+        element={
+          <FindJobs />
+        }
       />
 
 
       <Route
         path="/candidate/jobs/:jobId"
-        element={<CandidateJobDetails />}
+        element={
+          <CandidateJobDetails />
+        }
       />
 
 
       <Route
         path="/candidate/jobs/:jobId/apply"
-        element={<CandidateJobDetails />}
+        element={
+          <CandidateJobDetails />
+        }
       />
 
 
@@ -3324,7 +3351,9 @@ function App() {
 
       <Route
         path="/candidate/applications"
-        element={<CandidateApplications />}
+        element={
+          <CandidateApplications />
+        }
       />
 
 
@@ -3334,7 +3363,9 @@ function App() {
 
       <Route
         path="/candidate/job-matches"
-        element={<CandidateJobMatches />}
+        element={
+          <CandidateJobMatches />
+        }
       />
 
 
@@ -3344,7 +3375,9 @@ function App() {
 
       <Route
         path="/candidate/resumes"
-        element={<CandidateResumes />}
+        element={
+          <CandidateResumes />
+        }
       />
 
 
@@ -3354,17 +3387,21 @@ function App() {
 
       <Route
         path="/candidate/resume-analysis/:resumeId"
-        element={<ResumeAnalysisPage />}
+        element={
+          <ResumeAnalysisPage />
+        }
       />
 
 
       {/* ======================================================
           CANDIDATE CAREER INTELLIGENCE
-          ====================================================== */}
+      ====================================================== */}
 
       <Route
         path="/candidate/career-intelligence"
-        element={<CareerIntelligence />}
+        element={
+          <CareerIntelligence />
+        }
       />
 
 
@@ -3374,7 +3411,9 @@ function App() {
 
       <Route
         path="/candidate/profile"
-        element={<CandidateProfile />}
+        element={
+          <CandidateProfile />
+        }
       />
 
 
@@ -3384,7 +3423,9 @@ function App() {
 
       <Route
         path="/candidate/settings"
-        element={<CandidateSettings />}
+        element={
+          <CandidateSettings />
+        }
       />
 
 
