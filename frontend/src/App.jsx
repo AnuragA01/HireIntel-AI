@@ -23,6 +23,7 @@ import CareerIntelligence from "./pages/CareerIntelligence";
 
 import RecruiterDashboard from "./pages/RecruiterDashboard";
 import RecruiterCandidateMatches from "./pages/RecruiterCandidateMatches";
+
 import RecruiterJobs from "./pages/RecruiterJobs";
 import RecruiterPostJob from "./pages/RecruiterPostJob";
 
@@ -1467,63 +1468,92 @@ function CandidateJobDetails() {
     </div>
   );
 }
-
-
 function RecruiterApplications() {
-
   const navigate = useNavigate();
 
-
   const [jobs, setJobs] = useState([]);
-  const [applications, setApplications] =
-    useState([]);
+  const [applications, setApplications] = useState([]);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const [error, setError] =
-    useState("");
+  const [selectedJobId, setSelectedJobId] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState("all");
+  const [searchText, setSearchText] = useState("");
 
-  const [selectedJobId, setSelectedJobId] =
-    useState("all");
+  const [updatingId, setUpdatingId] = useState(null);
 
-  const [updatingId, setUpdatingId] =
-    useState(null);
-
+  // ============================================================
+  // LOAD RECRUITER APPLICATIONS
+  // ============================================================
 
   useEffect(() => {
     let cancelled = false;
 
     const loadApplications = async () => {
-      const token = localStorage.getItem("hireintel_token");
+      const token =
+        localStorage.getItem("hireintel_token");
 
       if (!token) {
         navigate("/login", {
           replace: true,
         });
+
         return;
       }
 
       try {
-        /* GET RECRUITER DASHBOARD */
+        setLoading(true);
+        setError("");
 
-        const dashboardResponse = await fetch(
-          `${API_BASE_URL}/dashboard/recruiter`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
+        // --------------------------------------------------------
+        // LOAD RECRUITER DASHBOARD
+        // --------------------------------------------------------
 
-        const dashboardData = await dashboardResponse
-          .json()
-          .catch(() => null);
+        const dashboardResponse =
+          await fetch(
+            `${API_BASE_URL}/dashboard/recruiter`,
+            {
+              method: "GET",
 
-        if (dashboardResponse.status === 401) {
-          localStorage.removeItem("hireintel_token");
+              headers: {
+                Authorization:
+                  `Bearer ${token}`,
+
+                Accept:
+                  "application/json",
+              },
+            }
+          );
+
+        const dashboardData =
+          await dashboardResponse
+            .json()
+            .catch(() => null);
+
+        // --------------------------------------------------------
+        // TOKEN EXPIRED
+        // --------------------------------------------------------
+
+        if (
+          dashboardResponse.status ===
+          401
+        ) {
+          localStorage.removeItem(
+            "hireintel_token"
+          );
+
+          localStorage.removeItem(
+            "hireintel_role"
+          );
+
+          localStorage.removeItem(
+            "hireintel_user_id"
+          );
+
+          localStorage.removeItem(
+            "hireintel_email"
+          );
 
           navigate("/login", {
             replace: true,
@@ -1532,7 +1562,13 @@ function RecruiterApplications() {
           return;
         }
 
-        if (!dashboardResponse.ok) {
+        // --------------------------------------------------------
+        // DASHBOARD ERROR
+        // --------------------------------------------------------
+
+        if (
+          !dashboardResponse.ok
+        ) {
           throw new Error(
             getErrorMessage(
               dashboardData,
@@ -1541,47 +1577,87 @@ function RecruiterApplications() {
           );
         }
 
-        const recruiterJobs = Array.isArray(dashboardData?.jobs)
-          ? dashboardData.jobs
-          : [];
+        const recruiterJobs =
+          Array.isArray(
+            dashboardData?.jobs
+          )
+            ? dashboardData.jobs
+            : [];
 
         if (cancelled) {
           return;
         }
 
-        setJobs(recruiterJobs);
+        setJobs(
+          recruiterJobs
+        );
 
-        /* GET APPLICATIONS FOR EACH JOB */
+        // --------------------------------------------------------
+        // LOAD APPLICATIONS FOR EVERY JOB
+        // --------------------------------------------------------
 
         const allApplications = [];
 
-        for (const job of recruiterJobs) {
+        for (
+          const job of recruiterJobs
+        ) {
           if (cancelled) {
             return;
           }
 
-          const jobId = job?.job_id ?? job?.id;
+          const jobId =
+            job?.job_id ??
+            job?.id;
 
           if (!jobId) {
             continue;
           }
 
           try {
-            const response = await fetch(
-              `${API_BASE_URL}/applications/job/${jobId}`,
-              {
-                method: "GET",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  Accept: "application/json",
-                },
-              }
-            );
+            const response =
+              await fetch(
+                `${API_BASE_URL}/applications/job/${jobId}`,
+                {
+                  method: "GET",
 
-            const data = await response.json().catch(() => []);
+                  headers: {
+                    Authorization:
+                      `Bearer ${token}`,
 
-            if (response.status === 401) {
-              localStorage.removeItem("hireintel_token");
+                    Accept:
+                      "application/json",
+                  },
+                }
+              );
+
+            const data =
+              await response
+                .json()
+                .catch(() => []);
+
+            // ----------------------------------------------------
+            // TOKEN EXPIRED
+            // ----------------------------------------------------
+
+            if (
+              response.status ===
+              401
+            ) {
+              localStorage.removeItem(
+                "hireintel_token"
+              );
+
+              localStorage.removeItem(
+                "hireintel_role"
+              );
+
+              localStorage.removeItem(
+                "hireintel_user_id"
+              );
+
+              localStorage.removeItem(
+                "hireintel_email"
+              );
 
               navigate("/login", {
                 replace: true,
@@ -1590,22 +1666,35 @@ function RecruiterApplications() {
               return;
             }
 
-            if (response.ok && Array.isArray(data)) {
-              data.forEach((application) => {
-                allApplications.push({
-                  ...application,
-                  job_title:
-                    job?.job_title ||
-                    job?.title ||
-                    "Job",
-                  company_name:
-                    job?.company_name ||
-                    job?.company ||
-                    "Company",
-                  job_location:
-                    job?.location || "",
-                });
-              });
+            // ----------------------------------------------------
+            // APPLICATION DATA
+            // ----------------------------------------------------
+
+            if (
+              response.ok &&
+              Array.isArray(data)
+            ) {
+              data.forEach(
+                (application) => {
+                  allApplications.push({
+                    ...application,
+
+                    job_title:
+                      job?.job_title ||
+                      job?.title ||
+                      "Job",
+
+                    company_name:
+                      job?.company_name ||
+                      job?.company ||
+                      "Company",
+
+                    job_location:
+                      job?.location ||
+                      "",
+                  });
+                }
+              );
             }
           } catch (jobError) {
             console.warn(
@@ -1619,7 +1708,55 @@ function RecruiterApplications() {
           return;
         }
 
-        setApplications(allApplications);
+        // --------------------------------------------------------
+        // SORT APPLICATIONS BY MATCH SCORE
+        // --------------------------------------------------------
+
+        allApplications.sort(
+          (a, b) => {
+            const scoreA =
+              a.match_score !==
+                null &&
+              a.match_score !==
+                undefined &&
+              a.match_score !==
+                ""
+                ? Number(
+                    a.match_score
+                  )
+                : -1;
+
+            const scoreB =
+              b.match_score !==
+                null &&
+              b.match_score !==
+                undefined &&
+              b.match_score !==
+                ""
+                ? Number(
+                    b.match_score
+                  )
+                : -1;
+
+            return (
+              (Number.isFinite(
+                scoreB
+              )
+                ? scoreB
+                : -1) -
+              (Number.isFinite(
+                scoreA
+              )
+                ? scoreA
+                : -1)
+            );
+          }
+        );
+
+        setApplications(
+          allApplications
+        );
+
         setError("");
       } catch (requestError) {
         console.error(
@@ -1640,32 +1777,38 @@ function RecruiterApplications() {
       }
     };
 
-    const timerId = window.setTimeout(() => {
-      loadApplications();
-    }, 0);
+    const timerId =
+      window.setTimeout(
+        () => {
+          loadApplications();
+        },
+        0
+      );
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timerId);
+
+      window.clearTimeout(
+        timerId
+      );
     };
   }, [navigate]);
 
-  /* UPDATE STATUS */
+  // ============================================================
+  // UPDATE APPLICATION STATUS
+  // ============================================================
 
   const updateApplicationStatus =
     async (
       applicationId,
       newStatus
     ) => {
-
       const token =
         localStorage.getItem(
           "hireintel_token"
         );
 
-
       if (!token) {
-
         navigate("/login", {
           replace: true,
         });
@@ -1673,14 +1816,13 @@ function RecruiterApplications() {
         return;
       }
 
-
       setUpdatingId(
         applicationId
       );
 
+      setError("");
 
       try {
-
         const response =
           await fetch(
             `${API_BASE_URL}/applications/${applicationId}/status`,
@@ -1698,25 +1840,44 @@ function RecruiterApplications() {
                   "application/json",
               },
 
-              body: JSON.stringify({
-                status: newStatus,
+              body:
+                JSON.stringify({
+                  status:
+                    newStatus,
 
-                recruiter_notes:
-                  `Application status updated to ${newStatus}.`,
-              }),
+                  recruiter_notes:
+                    `Application status updated to ${newStatus}.`,
+                }),
             }
           );
 
-
         const data =
-          await response.json()
+          await response
+            .json()
             .catch(() => null);
 
+        // --------------------------------------------------------
+        // TOKEN EXPIRED
+        // --------------------------------------------------------
 
-        if (response.status === 401) {
-
+        if (
+          response.status ===
+          401
+        ) {
           localStorage.removeItem(
             "hireintel_token"
+          );
+
+          localStorage.removeItem(
+            "hireintel_role"
+          );
+
+          localStorage.removeItem(
+            "hireintel_user_id"
+          );
+
+          localStorage.removeItem(
+            "hireintel_email"
           );
 
           navigate("/login", {
@@ -1726,9 +1887,13 @@ function RecruiterApplications() {
           return;
         }
 
+        // --------------------------------------------------------
+        // UPDATE FAILED
+        // --------------------------------------------------------
 
-        if (!response.ok) {
-
+        if (
+          !response.ok
+        ) {
           setError(
             getErrorMessage(
               data,
@@ -1739,741 +1904,1759 @@ function RecruiterApplications() {
           return;
         }
 
-
-        /* UPDATE UI WITHOUT REFRESH */
+        // --------------------------------------------------------
+        // UPDATE FRONTEND IMMEDIATELY
+        // --------------------------------------------------------
 
         setApplications(
-          (currentApplications) =>
+          (
+            currentApplications
+          ) =>
             currentApplications.map(
-              (application) =>
-                Number(application.id) ===
-                Number(applicationId)
-                  ? {
-                      ...application,
+              (
+                application
+              ) => {
+                if (
+                  Number(
+                    application.id
+                  ) !==
+                  Number(
+                    applicationId
+                  )
+                ) {
+                  return application;
+                }
 
-                      status:
-                        data?.status ||
-                        newStatus,
-                    }
-                  : application
+                return {
+                  ...application,
+
+                  status:
+                    data?.status ||
+                    newStatus,
+
+                  recruiter_notes:
+                    data?.recruiter_notes ||
+                    application.recruiter_notes,
+                };
+              }
             )
         );
-
-
       } catch (requestError) {
-
         console.error(
           "Status update error:",
           requestError
         );
 
-
         setError(
           "Unable to connect to the HireIntel AI server."
         );
-
       } finally {
-
-        setUpdatingId(null);
-
+        setUpdatingId(
+          null
+        );
       }
-
     };
 
+  // ============================================================
+  // FILTER APPLICATIONS
+  // ============================================================
 
   const filteredApplications =
-    selectedJobId === "all"
-      ? applications
-      : applications.filter(
-          (application) =>
-            Number(application.job_id) ===
-            Number(selectedJobId)
+    applications.filter(
+      (application) => {
+        // --------------------------------------------------------
+        // JOB FILTER
+        // --------------------------------------------------------
+
+        const matchesJob =
+          selectedJobId ===
+            "all" ||
+          Number(
+            application.job_id
+          ) ===
+            Number(
+              selectedJobId
+            );
+
+        // --------------------------------------------------------
+        // STATUS FILTER
+        // --------------------------------------------------------
+
+        const currentStatus =
+          String(
+            application.status ||
+              "Applied"
+          ).toLowerCase();
+
+        const matchesStatus =
+          selectedStatus ===
+            "all" ||
+          currentStatus ===
+            selectedStatus.toLowerCase();
+
+        // --------------------------------------------------------
+        // SEARCH FILTER
+        // --------------------------------------------------------
+
+        const search =
+          searchText
+            .trim()
+            .toLowerCase();
+
+        if (!search) {
+          return (
+            matchesJob &&
+            matchesStatus
+          );
+        }
+
+        const searchableText = [
+          application.id,
+          application.job_id,
+          application.candidate_id,
+          application.resume_id,
+          application.job_title,
+          application.company_name,
+          application.job_location,
+          application.status,
+          application.cover_letter,
+        ]
+          .filter(
+            (value) =>
+              value !==
+                null &&
+              value !==
+                undefined
+          )
+          .join(" ")
+          .toLowerCase();
+
+        return (
+          matchesJob &&
+          matchesStatus &&
+          searchableText.includes(
+            search
+          )
         );
+      }
+    );
 
+  // ============================================================
+  // STATISTICS
+  // ============================================================
 
-  const getStatusClass = (status) => {
+  const totalApplications =
+    applications.length;
 
-    switch (
-      String(status || "")
-        .toLowerCase()
-    ) {
+  const shortlistedCount =
+    applications.filter(
+      (application) =>
+        String(
+          application.status ||
+            "Applied"
+        ).toLowerCase() ===
+        "shortlisted"
+    ).length;
 
-      case "shortlisted":
-        return "status-shortlisted";
+  const interviewCount =
+    applications.filter(
+      (application) =>
+        String(
+          application.status ||
+            "Applied"
+        ).toLowerCase() ===
+        "interview"
+    ).length;
 
-      case "interview":
-        return "status-interview";
+  const hiredCount =
+    applications.filter(
+      (application) =>
+        String(
+          application.status ||
+            "Applied"
+        ).toLowerCase() ===
+        "hired"
+    ).length;
 
-      case "hired":
-        return "status-hired";
+  const rejectedCount =
+    applications.filter(
+      (application) =>
+        String(
+          application.status ||
+            "Applied"
+        ).toLowerCase() ===
+        "rejected"
+    ).length;
 
-      case "rejected":
-        return "status-rejected";
+  // ============================================================
+  // STATUS STYLE
+  // ============================================================
 
-      default:
-        return "status-applied";
+  const getStatusStyle =
+    (status) => {
+      const value =
+        String(
+          status ||
+            "Applied"
+        ).toLowerCase();
 
-    }
+      if (
+        value ===
+        "shortlisted"
+      ) {
+        return {
+          background:
+            "#eeeaff",
 
-  };
+          color:
+            "#6652e8",
+        };
+      }
 
+      if (
+        value ===
+        "interview"
+      ) {
+        return {
+          background:
+            "#eaf4ff",
+
+          color:
+            "#1976d2",
+        };
+      }
+
+      if (
+        value ===
+        "hired"
+      ) {
+        return {
+          background:
+            "#e9f8ef",
+
+          color:
+            "#168447",
+        };
+      }
+
+      if (
+        value ===
+        "rejected"
+      ) {
+        return {
+          background:
+            "#fff0f0",
+
+          color:
+            "#d93025",
+        };
+      }
+
+      return {
+        background:
+          "#f2f3f7",
+
+        color:
+          "#555b70",
+      };
+    };
+
+  // ============================================================
+  // LOADING
+  // ============================================================
 
   if (loading) {
-
     return (
       <div
         style={{
-          minHeight: "100vh",
-          background: "#f7f8fc",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          minHeight:
+            "100vh",
+
+          background:
+            "#f7f8fc",
+
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
+          justifyContent:
+            "center",
+
+          padding:
+            "30px",
         }}
       >
-
         <div
           style={{
-            textAlign: "center",
+            background:
+              "#fff",
+
+            borderRadius:
+              "20px",
+
+            padding:
+              "45px",
+
+            textAlign:
+              "center",
+
+            boxShadow:
+              "0 10px 35px rgba(40,40,80,0.07)",
           }}
         >
+          <div
+            style={{
+              width:
+                "50px",
+
+              height:
+                "50px",
+
+              borderRadius:
+                "50%",
+
+              border:
+                "5px solid #e8e5ff",
+
+              borderTopColor:
+                "#6652e8",
+
+              margin:
+                "0 auto 20px",
+
+              animation:
+                "hireintel-applications-spin 0.9s linear infinite",
+            }}
+          />
 
           <h2>
             Loading Applications...
           </h2>
 
-          <p>
-            Fetching candidate applications.
+          <p
+            style={{
+              color:
+                "#68708a",
+            }}
+          >
+            Fetching candidate
+            applications.
           </p>
-
         </div>
 
+        <style>
+          {`
+            @keyframes hireintel-applications-spin {
+              to {
+                transform: rotate(360deg);
+              }
+            }
+          `}
+        </style>
       </div>
     );
-
   }
 
+  // ============================================================
+  // MAIN PAGE
+  // ============================================================
 
   return (
     <div
       style={{
-        minHeight: "100vh",
-        background: "#f7f8fc",
-        padding: "40px 30px",
+        minHeight:
+          "100vh",
+
+        background:
+          "#f7f8fc",
+
+        padding:
+          "40px 25px 70px",
       }}
     >
-
       <div
         style={{
-          maxWidth: "1250px",
-          margin: "0 auto",
+          maxWidth:
+            "1250px",
+
+          margin:
+            "0 auto",
         }}
       >
-
-        {/* HEADER */}
+        {/* ======================================================
+            HEADER
+        ====================================================== */}
 
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "20px",
-            marginBottom: "30px",
+            display:
+              "flex",
+
+            justifyContent:
+              "space-between",
+
+            alignItems:
+              "center",
+
+            flexWrap:
+              "wrap",
+
+            gap:
+              "20px",
+
+            marginBottom:
+              "30px",
           }}
         >
-
           <div>
-
             <p
               style={{
-                color: "#6652e8",
-                fontWeight: "700",
-                marginBottom: "8px",
+                color:
+                  "#6652e8",
+
+                fontWeight:
+                  "800",
+
+                letterSpacing:
+                  "0.08em",
+
+                marginBottom:
+                  "8px",
               }}
             >
-              RECRUITMENT
+              RECRUITER PORTAL
             </p>
 
-
-            <h1>
+            <h1
+              style={{
+                margin:
+                  0,
+              }}
+            >
               Candidate Applications
             </h1>
 
-
             <p
               style={{
-                color: "#68708a",
-                marginTop: "8px",
+                color:
+                  "#68708a",
+
+                marginTop:
+                  "10px",
+
+                lineHeight:
+                  "1.6",
               }}
             >
-              Review candidates and manage
-              their application status.
+              Review candidates,
+              compare AI match
+              scores and manage
+              applications.
             </p>
-
           </div>
-
 
           <button
             type="button"
             className="btn btn-outline"
             onClick={() =>
-              navigate("/recruiter/dashboard")
+              navigate(
+                "/recruiter/dashboard"
+              )
             }
           >
             ← Dashboard
           </button>
-
         </div>
 
-
-        {/* ERROR */}
+        {/* ======================================================
+            ERROR
+        ====================================================== */}
 
         {error && (
           <div
             style={{
-              background: "#fff0f0",
-              color: "#d93025",
-              padding: "15px 18px",
-              borderRadius: "12px",
-              marginBottom: "20px",
+              background:
+                "#fff0f0",
+
+              color:
+                "#d93025",
+
+              border:
+                "1px solid #ffd4d4",
+
+              padding:
+                "15px 18px",
+
+              borderRadius:
+                "12px",
+
+              marginBottom:
+                "20px",
             }}
           >
             {error}
           </div>
         )}
 
-
-        {/* SUMMARY */}
+        {/* ======================================================
+            SUMMARY CARDS
+        ====================================================== */}
 
         <div
           style={{
-            display: "grid",
+            display:
+              "grid",
+
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "20px",
-            marginBottom: "25px",
+              "repeat(auto-fit, minmax(180px, 1fr))",
+
+            gap:
+              "18px",
+
+            marginBottom:
+              "25px",
           }}
         >
+          {/* TOTAL JOBS */}
 
           <div
             style={{
-              background: "#fff",
-              borderRadius: "18px",
-              padding: "25px",
+              background:
+                "#fff",
+
+              borderRadius:
+                "18px",
+
+              padding:
+                "24px",
+
+              boxShadow:
+                "0 5px 20px rgba(40,40,80,0.04)",
             }}
           >
-
-            <small>
+            <small
+              style={{
+                color:
+                  "#68708a",
+              }}
+            >
               Total Jobs
             </small>
 
-            <h2>
+            <h2
+              style={{
+                margin:
+                  "10px 0 0",
+              }}
+            >
               {jobs.length}
             </h2>
-
           </div>
 
+          {/* TOTAL APPLICATIONS */}
 
           <div
             style={{
-              background: "#fff",
-              borderRadius: "18px",
-              padding: "25px",
+              background:
+                "#fff",
+
+              borderRadius:
+                "18px",
+
+              padding:
+                "24px",
+
+              boxShadow:
+                "0 5px 20px rgba(40,40,80,0.04)",
             }}
           >
-
-            <small>
+            <small
+              style={{
+                color:
+                  "#68708a",
+              }}
+            >
               Total Applications
             </small>
 
-            <h2>
-              {applications.length}
+            <h2
+              style={{
+                margin:
+                  "10px 0 0",
+              }}
+            >
+              {totalApplications}
             </h2>
-
           </div>
 
+          {/* SHORTLISTED */}
 
           <div
             style={{
-              background: "#fff",
-              borderRadius: "18px",
-              padding: "25px",
+              background:
+                "#fff",
+
+              borderRadius:
+                "18px",
+
+              padding:
+                "24px",
+
+              boxShadow:
+                "0 5px 20px rgba(40,40,80,0.04)",
             }}
           >
-
-            <small>
+            <small
+              style={{
+                color:
+                  "#68708a",
+              }}
+            >
               Shortlisted
             </small>
 
-            <h2>
-              {
-                applications.filter(
-                  (application) =>
-                    String(
-                      application.status
-                    ).toLowerCase() ===
-                    "shortlisted"
-                ).length
-              }
-            </h2>
+            <h2
+              style={{
+                margin:
+                  "10px 0 0",
 
+                color:
+                  "#6652e8",
+              }}
+            >
+              {shortlistedCount}
+            </h2>
           </div>
 
+          {/* INTERVIEWS */}
 
           <div
             style={{
-              background: "#fff",
-              borderRadius: "18px",
-              padding: "25px",
+              background:
+                "#fff",
+
+              borderRadius:
+                "18px",
+
+              padding:
+                "24px",
+
+              boxShadow:
+                "0 5px 20px rgba(40,40,80,0.04)",
             }}
           >
-
-            <small>
+            <small
+              style={{
+                color:
+                  "#68708a",
+              }}
+            >
               Interviews
             </small>
 
-            <h2>
-              {
-                applications.filter(
-                  (application) =>
-                    String(
-                      application.status
-                    ).toLowerCase() ===
-                    "interview"
-                ).length
-              }
+            <h2
+              style={{
+                margin:
+                  "10px 0 0",
+              }}
+            >
+              {interviewCount}
             </h2>
-
           </div>
 
-        </div>
-
-
-        {/* FILTER */}
-
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: "18px",
-            padding: "20px",
-            marginBottom: "25px",
-          }}
-        >
-
-          <label
-            htmlFor="jobFilter"
-            style={{
-              fontWeight: "700",
-              display: "block",
-              marginBottom: "10px",
-            }}
-          >
-            Filter by Job
-          </label>
-
-
-          <select
-            id="jobFilter"
-            value={selectedJobId}
-            onChange={(event) =>
-              setSelectedJobId(
-                event.target.value
-              )
-            }
-            style={{
-              width: "100%",
-              maxWidth: "500px",
-              padding: "13px",
-              borderRadius: "10px",
-              border: "1px solid #ddd",
-            }}
-          >
-
-            <option value="all">
-              All Jobs
-            </option>
-
-
-            {jobs.map((job) => {
-
-              const jobId =
-                job.job_id ?? job.id;
-
-              return (
-                <option
-                  key={jobId}
-                  value={jobId}
-                >
-                  {job.job_title ||
-                    job.title ||
-                    `Job #${jobId}`}
-                </option>
-              );
-
-            })}
-
-          </select>
-
-        </div>
-
-
-        {/* APPLICATION LIST */}
-
-        {filteredApplications.length === 0 ? (
+          {/* REJECTED */}
 
           <div
             style={{
-              background: "#fff",
-              borderRadius: "20px",
-              padding: "60px 30px",
-              textAlign: "center",
+              background:
+                "#fff",
+
+              borderRadius:
+                "18px",
+
+              padding:
+                "24px",
+
+              boxShadow:
+                "0 5px 20px rgba(40,40,80,0.04)",
             }}
           >
+            <small
+              style={{
+                color:
+                  "#68708a",
+              }}
+            >
+              Rejected
+            </small>
 
+            <h2
+              style={{
+                margin:
+                  "10px 0 0",
+
+                color:
+                  "#d93025",
+              }}
+            >
+              {rejectedCount}
+            </h2>
+          </div>
+
+          {/* HIRED */}
+
+          <div
+            style={{
+              background:
+                "#fff",
+
+              borderRadius:
+                "18px",
+
+              padding:
+                "24px",
+
+              boxShadow:
+                "0 5px 20px rgba(40,40,80,0.04)",
+            }}
+          >
+            <small
+              style={{
+                color:
+                  "#68708a",
+              }}
+            >
+              Hired
+            </small>
+
+            <h2
+              style={{
+                margin:
+                  "10px 0 0",
+
+                color:
+                  "#168447",
+              }}
+            >
+              {hiredCount}
+            </h2>
+          </div>
+        </div>
+
+        {/* ======================================================
+            SEARCH & FILTER
+        ====================================================== */}
+
+        <div
+          style={{
+            background:
+              "#fff",
+
+            borderRadius:
+              "18px",
+
+            padding:
+              "22px",
+
+            marginBottom:
+              "25px",
+
+            boxShadow:
+              "0 5px 20px rgba(40,40,80,0.04)",
+          }}
+        >
+          <h3
+            style={{
+              marginTop:
+                0,
+
+              marginBottom:
+                "18px",
+            }}
+          >
+            Search & Filter
+          </h3>
+
+          <div
+            style={{
+              display:
+                "grid",
+
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(220px, 1fr))",
+
+              gap:
+                "15px",
+            }}
+          >
+            {/* SEARCH */}
+
+            <div>
+              <label
+                style={{
+                  display:
+                    "block",
+
+                  fontWeight:
+                    "700",
+
+                  marginBottom:
+                    "8px",
+                }}
+              >
+                Search
+              </label>
+
+              <input
+                type="text"
+                value={
+                  searchText
+                }
+                onChange={(
+                  event
+                ) =>
+                  setSearchText(
+                    event.target
+                      .value
+                  )
+                }
+                placeholder="Search job, candidate ID, resume ID..."
+                style={{
+                  width:
+                    "100%",
+
+                  padding:
+                    "13px",
+
+                  borderRadius:
+                    "10px",
+
+                  border:
+                    "1px solid #dfe3ee",
+
+                  boxSizing:
+                    "border-box",
+
+                  fontSize:
+                    "14px",
+                }}
+              />
+            </div>
+
+            {/* JOB FILTER */}
+
+            <div>
+              <label
+                style={{
+                  display:
+                    "block",
+
+                  fontWeight:
+                    "700",
+
+                  marginBottom:
+                    "8px",
+                }}
+              >
+                Filter by Job
+              </label>
+
+              <select
+                value={
+                  selectedJobId
+                }
+                onChange={(
+                  event
+                ) =>
+                  setSelectedJobId(
+                    event.target
+                      .value
+                  )
+                }
+                style={{
+                  width:
+                    "100%",
+
+                  padding:
+                    "13px",
+
+                  borderRadius:
+                    "10px",
+
+                  border:
+                    "1px solid #dfe3ee",
+
+                  background:
+                    "#fff",
+
+                  boxSizing:
+                    "border-box",
+                }}
+              >
+                <option value="all">
+                  All Jobs
+                </option>
+
+                {jobs.map(
+                  (job) => {
+                    const jobId =
+                      job?.job_id ??
+                      job?.id;
+
+                    return (
+                      <option
+                        key={
+                          jobId
+                        }
+                        value={
+                          jobId
+                        }
+                      >
+                        {job?.job_title ||
+                          job?.title ||
+                          `Job #${jobId}`}
+                      </option>
+                    );
+                  }
+                )}
+              </select>
+            </div>
+
+            {/* STATUS FILTER */}
+
+            <div>
+              <label
+                style={{
+                  display:
+                    "block",
+
+                  fontWeight:
+                    "700",
+
+                  marginBottom:
+                    "8px",
+                }}
+              >
+                Filter by Status
+              </label>
+
+              <select
+                value={
+                  selectedStatus
+                }
+                onChange={(
+                  event
+                ) =>
+                  setSelectedStatus(
+                    event.target
+                      .value
+                  )
+                }
+                style={{
+                  width:
+                    "100%",
+
+                  padding:
+                    "13px",
+
+                  borderRadius:
+                    "10px",
+
+                  border:
+                    "1px solid #dfe3ee",
+
+                  background:
+                    "#fff",
+
+                  boxSizing:
+                    "border-box",
+                }}
+              >
+                <option value="all">
+                  All Statuses
+                </option>
+
+                <option value="Applied">
+                  Applied
+                </option>
+
+                <option value="Shortlisted">
+                  Shortlisted
+                </option>
+
+                <option value="Interview">
+                  Interview
+                </option>
+
+                <option value="Rejected">
+                  Rejected
+                </option>
+
+                <option value="Hired">
+                  Hired
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <p
+            style={{
+              color:
+                "#68708a",
+
+              margin:
+                "15px 0 0",
+
+              fontSize:
+                "14px",
+            }}
+          >
+            Showing{" "}
+            <strong>
+              {
+                filteredApplications.length
+              }
+            </strong>{" "}
+            of{" "}
+            <strong>
+              {
+                applications.length
+              }
+            </strong>{" "}
+            applications
+          </p>
+        </div>
+
+        {/* ======================================================
+            APPLICATION LIST
+        ====================================================== */}
+
+        {filteredApplications.length ===
+        0 ? (
+          <div
+            style={{
+              background:
+                "#fff",
+
+              borderRadius:
+                "20px",
+
+              padding:
+                "70px 30px",
+
+              textAlign:
+                "center",
+
+              boxShadow:
+                "0 5px 20px rgba(40,40,80,0.04)",
+            }}
+          >
             <div
               style={{
-                fontSize: "45px",
-                marginBottom: "15px",
+                fontSize:
+                  "50px",
+
+                marginBottom:
+                  "15px",
               }}
             >
               📋
             </div>
 
-
             <h2>
               No Applications Found
             </h2>
 
-
             <p
               style={{
-                color: "#68708a",
-                marginTop: "10px",
+                color:
+                  "#68708a",
+
+                marginTop:
+                  "10px",
               }}
             >
-              Applications submitted by candidates
-              will appear here.
+              No applications match
+              your current filters.
             </p>
-
           </div>
-
         ) : (
-
           <div
             style={{
-              display: "grid",
-              gap: "20px",
+              display:
+                "grid",
+
+              gap:
+                "20px",
             }}
           >
-
             {filteredApplications.map(
-              (application) => (
+              (
+                application
+              ) => {
+                // ------------------------------------------------
+                // MATCH SCORE
+                // ------------------------------------------------
 
-                <div
-                  key={application.id}
-                  style={{
-                    background: "#fff",
-                    borderRadius: "20px",
-                    padding: "28px",
-                    boxShadow:
-                      "0 5px 20px rgba(40,40,80,0.05)",
-                  }}
-                >
+                const rawScore =
+                  application.match_score;
 
-                  {/* APPLICATION HEADER */}
+                const numericScore =
+                  rawScore !==
+                    null &&
+                  rawScore !==
+                    undefined &&
+                  rawScore !==
+                    ""
+                    ? Number(
+                        rawScore
+                      )
+                    : null;
 
+                const safeScore =
+                  numericScore !==
+                    null &&
+                  Number.isFinite(
+                    numericScore
+                  )
+                    ? Math.min(
+                        Math.max(
+                          numericScore,
+                          0
+                        ),
+                        100
+                      )
+                    : null;
+
+                // ------------------------------------------------
+                // STATUS
+                // ------------------------------------------------
+
+                const displayStatus =
+                  application.status ||
+                  "Applied";
+
+                const statusStyle =
+                  getStatusStyle(
+                    displayStatus
+                  );
+
+                const isUpdating =
+                  updatingId ===
+                  application.id;
+
+                return (
                   <div
+                    key={
+                      application.id
+                    }
                     style={{
-                      display: "flex",
-                      justifyContent:
-                        "space-between",
-                      alignItems: "flex-start",
-                      flexWrap: "wrap",
-                      gap: "20px",
+                      background:
+                        "#fff",
+
+                      borderRadius:
+                        "20px",
+
+                      padding:
+                        "28px",
+
+                      boxShadow:
+                        "0 5px 20px rgba(40,40,80,0.05)",
                     }}
                   >
-
-                    <div>
-
-                      <p
-                        style={{
-                          color: "#6652e8",
-                          fontWeight: "700",
-                          marginBottom: "7px",
-                        }}
-                      >
-                        APPLICATION #{application.id}
-                      </p>
-
-
-                      <h2
-                        style={{
-                          marginBottom: "8px",
-                        }}
-                      >
-                        {application.job_title}
-                      </h2>
-
-
-                      <p
-                        style={{
-                          color: "#68708a",
-                        }}
-                      >
-                        {application.company_name}
-
-                        {application.job_location
-                          ? ` • ${application.job_location}`
-                          : ""}
-                      </p>
-
-                    </div>
-
-
-                    <span
-                      className={
-                        getStatusClass(
-                          application.status
-                        )
-                      }
-                      style={{
-                        padding:
-                          "8px 15px",
-                        borderRadius:
-                          "20px",
-                        fontWeight:
-                          "700",
-                        background:
-                          "#f0edff",
-                        color:
-                          "#5e4ee5",
-                      }}
-                    >
-                      {application.status ||
-                        "Applied"}
-                    </span>
-
-                  </div>
-
-
-                  {/* DETAILS */}
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fit, minmax(180px, 1fr))",
-                      gap: "15px",
-                      marginTop: "25px",
-                      paddingTop: "20px",
-                      borderTop:
-                        "1px solid #eee",
-                    }}
-                  >
-
-                    <div>
-
-                      <small>
-                        Candidate ID
-                      </small>
-
-                      <strong
-                        style={{
-                          display: "block",
-                          marginTop: "5px",
-                        }}
-                      >
-                        {application.candidate_id}
-                      </strong>
-
-                    </div>
-
-
-                    <div>
-
-                      <small>
-                        Resume ID
-                      </small>
-
-                      <strong
-                        style={{
-                          display: "block",
-                          marginTop: "5px",
-                        }}
-                      >
-                        {application.resume_id}
-                      </strong>
-
-                    </div>
-
-
-                    <div>
-
-                      <small>
-                        AI Match Score
-                      </small>
-
-                      <strong
-                        style={{
-                          display: "block",
-                          marginTop: "5px",
-                          color: "#6652e8",
-                        }}
-                      >
-                        {application.match_score !==
-                          null &&
-                        application.match_score !==
-                          undefined
-                          ? `${application.match_score}%`
-                          : "Not available"}
-                      </strong>
-
-                    </div>
-
-
-                    <div>
-
-                      <small>
-                        Applied At
-                      </small>
-
-                      <strong
-                        style={{
-                          display: "block",
-                          marginTop: "5px",
-                        }}
-                      >
-                        {application.applied_at
-                          ? new Date(
-                              application.applied_at
-                            ).toLocaleDateString()
-                          : "—"}
-                      </strong>
-
-                    </div>
-
-                  </div>
-
-
-                  {/* COVER LETTER */}
-
-                  {application.cover_letter && (
+                    {/* ==========================================
+                        HEADER
+                    ========================================== */}
 
                     <div
                       style={{
-                        marginTop: "22px",
-                        padding: "18px",
-                        background: "#f8f7ff",
-                        borderRadius: "12px",
+                        display:
+                          "flex",
+
+                        justifyContent:
+                          "space-between",
+
+                        alignItems:
+                          "flex-start",
+
+                        flexWrap:
+                          "wrap",
+
+                        gap:
+                          "20px",
                       }}
                     >
+                      <div>
+                        <p
+                          style={{
+                            color:
+                              "#6652e8",
 
-                      <strong>
-                        Cover Letter
-                      </strong>
+                            fontWeight:
+                              "800",
 
+                            margin:
+                              "0 0 7px",
 
-                      <p
+                            fontSize:
+                              "13px",
+
+                            letterSpacing:
+                              "0.05em",
+                          }}
+                        >
+                          APPLICATION #
+                          {
+                            application.id
+                          }
+                        </p>
+
+                        <h2
+                          style={{
+                            margin:
+                              "0 0 8px",
+                          }}
+                        >
+                          {application.job_title ||
+                            `Job #${application.job_id}`}
+                        </h2>
+
+                        <p
+                          style={{
+                            color:
+                              "#68708a",
+
+                            margin:
+                              0,
+                          }}
+                        >
+                          {application.company_name ||
+                            "Company"}
+
+                          {application.job_location
+                            ? ` • ${application.job_location}`
+                            : ""}
+                        </p>
+                      </div>
+
+                      {/* STATUS BADGE */}
+
+                      <span
                         style={{
-                          marginTop: "8px",
-                          lineHeight: "1.7",
+                          ...statusStyle,
+
+                          padding:
+                            "8px 15px",
+
+                          borderRadius:
+                            "20px",
+
+                          fontWeight:
+                            "700",
+
                           whiteSpace:
-                            "pre-line",
+                            "nowrap",
                         }}
                       >
-                        {application.cover_letter}
-                      </p>
-
+                        {
+                          displayStatus
+                        }
+                      </span>
                     </div>
 
-                  )}
+                    {/* ==========================================
+                        DETAILS
+                    ========================================== */}
 
-
-                  {/* STATUS CONTROLS */}
-
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "10px",
-                      marginTop: "25px",
-                    }}
-                  >
-
-                    <strong
+                    <div
                       style={{
-                        width: "100%",
-                        marginBottom: "5px",
+                        display:
+                          "grid",
+
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(170px, 1fr))",
+
+                        gap:
+                          "15px",
+
+                        marginTop:
+                          "25px",
+
+                        paddingTop:
+                          "20px",
+
+                        borderTop:
+                          "1px solid #eee",
                       }}
                     >
-                      Update Status
-                    </strong>
+                      {/* CANDIDATE ID */}
 
+                      <div>
+                        <small
+                          style={{
+                            color:
+                              "#68708a",
+                          }}
+                        >
+                          Candidate ID
+                        </small>
 
-                    {[
-                      "Applied",
-                      "Shortlisted",
-                      "Interview",
-                      "Rejected",
-                      "Hired",
-                    ].map((status) => (
+                        <strong
+                          style={{
+                            display:
+                              "block",
 
-                      <button
-                        key={status}
-                        type="button"
-                        disabled={
-                          updatingId ===
-                          application.id
-                        }
-                        onClick={() =>
-                          updateApplicationStatus(
-                            application.id,
-                            status
-                          )
-                        }
+                            marginTop:
+                              "5px",
+                          }}
+                        >
+                          {
+                            application.candidate_id ??
+                            "—"
+                          }
+                        </strong>
+                      </div>
+
+                      {/* RESUME ID */}
+
+                      <div>
+                        <small
+                          style={{
+                            color:
+                              "#68708a",
+                          }}
+                        >
+                          Resume ID
+                        </small>
+
+                        <strong
+                          style={{
+                            display:
+                              "block",
+
+                            marginTop:
+                              "5px",
+                          }}
+                        >
+                          {
+                            application.resume_id ??
+                            "—"
+                          }
+                        </strong>
+                      </div>
+
+                      {/* JOB ID */}
+
+                      <div>
+                        <small
+                          style={{
+                            color:
+                              "#68708a",
+                          }}
+                        >
+                          Job ID
+                        </small>
+
+                        <strong
+                          style={{
+                            display:
+                              "block",
+
+                            marginTop:
+                              "5px",
+                          }}
+                        >
+                          {
+                            application.job_id ??
+                            "—"
+                          }
+                        </strong>
+                      </div>
+
+                      {/* MATCH SCORE */}
+
+                      <div>
+                        <small
+                          style={{
+                            color:
+                              "#68708a",
+                          }}
+                        >
+                          AI Match Score
+                        </small>
+
+                        <strong
+                          style={{
+                            display:
+                              "block",
+
+                            marginTop:
+                              "5px",
+
+                            color:
+                              safeScore !==
+                              null
+                                ? "#6652e8"
+                                : "#999",
+
+                            fontSize:
+                              "18px",
+                          }}
+                        >
+                          {safeScore !==
+                          null
+                            ? `${safeScore}%`
+                            : "Not available"}
+                        </strong>
+                      </div>
+
+                      {/* APPLIED DATE */}
+
+                      <div>
+                        <small
+                          style={{
+                            color:
+                              "#68708a",
+                          }}
+                        >
+                          Applied At
+                        </small>
+
+                        <strong
+                          style={{
+                            display:
+                              "block",
+
+                            marginTop:
+                              "5px",
+                          }}
+                        >
+                          {application.applied_at
+                            ? new Date(
+                                application.applied_at
+                              ).toLocaleDateString()
+                            : "—"}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* ==========================================
+                        AI MATCH SCORE
+                    ========================================== */}
+
+                    {safeScore !==
+                      null && (
+                      <div
                         style={{
+                          marginTop:
+                            "22px",
+
                           padding:
-                            "9px 15px",
-                          borderRadius:
-                            "9px",
-                          border:
-                            "1px solid #ddd",
+                            "18px",
+
                           background:
-                            application.status ===
-                            status
-                              ? "#6652e8"
-                              : "#fff",
-                          color:
-                            application.status ===
-                            status
-                              ? "#fff"
-                              : "#333",
-                          cursor:
-                            "pointer",
+                            "#f8f7ff",
+
+                          borderRadius:
+                            "12px",
                         }}
                       >
-                        {status}
-                      </button>
+                        <div
+                          style={{
+                            display:
+                              "flex",
 
-                    ))}
+                            justifyContent:
+                              "space-between",
 
+                            alignItems:
+                              "center",
+
+                            marginBottom:
+                              "9px",
+                          }}
+                        >
+                          <strong>
+                            AI Candidate Match
+                          </strong>
+
+                          <strong
+                            style={{
+                              color:
+                                "#6652e8",
+                            }}
+                          >
+                            {safeScore}%
+                          </strong>
+                        </div>
+
+                        <div
+                          style={{
+                            width:
+                              "100%",
+
+                            height:
+                              "9px",
+
+                            background:
+                              "#e5e1ff",
+
+                            borderRadius:
+                              "20px",
+
+                            overflow:
+                              "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width:
+                                `${safeScore}%`,
+
+                              height:
+                                "100%",
+
+                              background:
+                                "#6652e8",
+
+                              borderRadius:
+                                "20px",
+
+                              transition:
+                                "width 0.3s ease",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ==========================================
+                        NO MATCH SCORE
+                    ========================================== */}
+
+                    {safeScore ===
+                      null && (
+                      <div
+                        style={{
+                          marginTop:
+                            "22px",
+
+                          padding:
+                            "16px 18px",
+
+                          background:
+                            "#fff8e8",
+
+                          border:
+                            "1px solid #f3dfae",
+
+                          borderRadius:
+                            "12px",
+
+                          color:
+                            "#806000",
+                        }}
+                      >
+                        <strong>
+                          AI Match Score
+                        </strong>
+
+                        <p
+                          style={{
+                            margin:
+                              "6px 0 0",
+
+                            fontSize:
+                              "14px",
+                          }}
+                        >
+                          Match score is
+                          not available
+                          for this
+                          application
+                          yet.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* ==========================================
+                        COVER LETTER
+                    ========================================== */}
+
+                    {application.cover_letter && (
+                      <div
+                        style={{
+                          marginTop:
+                            "22px",
+
+                          padding:
+                            "18px",
+
+                          background:
+                            "#f8f7ff",
+
+                          borderRadius:
+                            "12px",
+                        }}
+                      >
+                        <strong>
+                          Cover Letter
+                        </strong>
+
+                        <p
+                          style={{
+                            marginTop:
+                              "8px",
+
+                            lineHeight:
+                              "1.7",
+
+                            whiteSpace:
+                              "pre-line",
+
+                            color:
+                              "#46506a",
+
+                            marginBottom:
+                              0,
+                          }}
+                        >
+                          {
+                            application.cover_letter
+                          }
+                        </p>
+                      </div>
+                    )}
+
+                    {/* ==========================================
+                        STATUS CONTROLS
+                    ========================================== */}
+
+                    <div
+                      style={{
+                        marginTop:
+                          "25px",
+
+                        paddingTop:
+                          "20px",
+
+                        borderTop:
+                          "1px solid #eee",
+                      }}
+                    >
+                      <strong>
+                        Update Application Status
+                      </strong>
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+
+                          flexWrap:
+                            "wrap",
+
+                          gap:
+                            "10px",
+
+                          marginTop:
+                            "12px",
+                        }}
+                      >
+                        {[
+                          "Applied",
+                          "Shortlisted",
+                          "Interview",
+                          "Rejected",
+                          "Hired",
+                        ].map(
+                          (
+                            status
+                          ) => {
+                            const isActive =
+                              String(
+                                displayStatus
+                              ).toLowerCase() ===
+                              status.toLowerCase();
+
+                            return (
+                              <button
+                                key={
+                                  status
+                                }
+                                type="button"
+                                disabled={
+                                  isUpdating
+                                }
+                                onClick={() =>
+                                  updateApplicationStatus(
+                                    application.id,
+                                    status
+                                  )
+                                }
+                                style={{
+                                  padding:
+                                    "9px 15px",
+
+                                  borderRadius:
+                                    "9px",
+
+                                  border:
+                                    isActive
+                                      ? "1px solid #6652e8"
+                                      : "1px solid #ddd",
+
+                                  background:
+                                    isActive
+                                      ? "#6652e8"
+                                      : "#fff",
+
+                                  color:
+                                    isActive
+                                      ? "#fff"
+                                      : "#333",
+
+                                  cursor:
+                                    isUpdating
+                                      ? "not-allowed"
+                                      : "pointer",
+
+                                  opacity:
+                                    isUpdating
+                                      ? 0.6
+                                      : 1,
+
+                                  fontWeight:
+                                    isActive
+                                      ? "700"
+                                      : "500",
+
+                                  transition:
+                                    "all 0.2s ease",
+                                }}
+                              >
+                                {isUpdating &&
+                                isActive
+                                  ? "Updating..."
+                                  : status}
+                              </button>
+                            );
+                          }
+                        )}
+                      </div>
+                    </div>
                   </div>
-
-                </div>
-
-              )
+                );
+              }
             )}
-
           </div>
-
         )}
-
       </div>
-
     </div>
   );
 }
-
 
 /* ============================================================
    SIMPLE RECRUITER PAGES
@@ -3193,7 +4376,613 @@ function ResumeAnalysisPage() {
     </div>
   );
 }
+/* ============================================================
+   RECRUITER EDIT JOB
+============================================================ */
 
+function RecruiterEditJob() {
+  const navigate = useNavigate();
+  const { jobId } = useParams();
+
+  const [form, setForm] = useState({
+    job_title: "",
+    company_name: "",
+    location: "",
+    job_type: "",
+    experience_required: "",
+    required_skills: "",
+    description: "",
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadJob = async () => {
+      const token = localStorage.getItem("hireintel_token");
+
+      if (!token) {
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (!jobId) {
+        setError("Job ID is missing.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/recruiter/jobs/${jobId}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/json",
+            },
+          }
+        );
+
+        const data = await response.json().catch(() => null);
+
+        if (response.status === 401) {
+          localStorage.removeItem("hireintel_token");
+          localStorage.removeItem("hireintel_role");
+          localStorage.removeItem("hireintel_user_id");
+          localStorage.removeItem("hireintel_email");
+
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        if (!response.ok) {
+          setError(
+            getErrorMessage(
+              data,
+              "Unable to load the job."
+            )
+          );
+          return;
+        }
+
+        if (!cancelled) {
+          setForm({
+            job_title: data?.job_title || "",
+            company_name: data?.company_name || "",
+            location: data?.location || "",
+            job_type: data?.job_type || "",
+            experience_required:
+              data?.experience_required || "",
+            required_skills: Array.isArray(
+              data?.required_skills
+            )
+              ? data.required_skills.join(", ")
+              : data?.required_skills || "",
+            description: data?.description || "",
+          });
+        }
+      } catch (requestError) {
+        console.error(
+          "Load recruiter job error:",
+          requestError
+        );
+
+        if (!cancelled) {
+          setError(
+            "Unable to connect to the HireIntel AI server."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadJob();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, navigate]);
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    const token = localStorage.getItem("hireintel_token");
+
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (!form.job_title.trim()) {
+      setError("Job title is required.");
+      return;
+    }
+
+    if (!form.company_name.trim()) {
+      setError("Company name is required.");
+      return;
+    }
+
+    if (!form.location.trim()) {
+      setError("Location is required.");
+      return;
+    }
+
+    if (!form.job_type.trim()) {
+      setError("Job type is required.");
+      return;
+    }
+
+    if (!form.experience_required.trim()) {
+      setError("Experience required is required.");
+      return;
+    }
+
+    if (!form.required_skills.trim()) {
+      setError("Required skills are required.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recruiter/jobs/${jobId}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            job_title: form.job_title.trim(),
+            company_name: form.company_name.trim(),
+            location: form.location.trim(),
+            job_type: form.job_type.trim(),
+            experience_required:
+              form.experience_required.trim(),
+            required_skills:
+              form.required_skills.trim(),
+            description: form.description.trim(),
+          }),
+        }
+      );
+
+      const data = await response.json().catch(() => null);
+
+      if (response.status === 401) {
+        localStorage.removeItem("hireintel_token");
+        localStorage.removeItem("hireintel_role");
+        localStorage.removeItem("hireintel_user_id");
+        localStorage.removeItem("hireintel_email");
+
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (!response.ok) {
+        setError(
+          getErrorMessage(
+            data,
+            "Unable to update the job."
+          )
+        );
+        return;
+      }
+
+      setSuccess("Job updated successfully.");
+
+      setTimeout(() => {
+        navigate("/recruiter/jobs");
+      }, 1000);
+    } catch (requestError) {
+      console.error(
+        "Update recruiter job error:",
+        requestError
+      );
+
+      setError(
+        "Unable to connect to the HireIntel AI server."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f6f7fb",
+          fontFamily: "Arial, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            background: "#fff",
+            padding: "40px",
+            borderRadius: "16px",
+            textAlign: "center",
+            boxShadow:
+              "0 10px 35px rgba(0,0,0,0.08)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "40px",
+              marginBottom: "12px",
+            }}
+          >
+            ⏳
+          </div>
+
+          <h3>Loading Job...</h3>
+
+          <p style={{ color: "#777" }}>
+            Please wait.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f6f7fb",
+        padding: "40px 20px",
+        fontFamily: "Arial, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "900px",
+          margin: "0 auto",
+        }}
+      >
+        <div style={{ marginBottom: "25px" }}>
+          <button
+            type="button"
+            onClick={() =>
+              navigate("/recruiter/jobs")
+            }
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "#6652e8",
+              fontSize: "15px",
+              fontWeight: "600",
+              cursor: "pointer",
+              padding: 0,
+              marginBottom: "15px",
+            }}
+          >
+            ← Back to My Jobs
+          </button>
+
+          <h1
+            style={{
+              margin: "0 0 8px",
+              fontSize: "32px",
+              color: "#20243a",
+            }}
+          >
+            Edit Job
+          </h1>
+
+          <p
+            style={{
+              margin: 0,
+              color: "#777",
+            }}
+          >
+            Update the details of your job posting.
+          </p>
+        </div>
+
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            padding: "35px",
+            boxShadow:
+              "0 10px 35px rgba(0,0,0,0.08)",
+          }}
+        >
+          <div
+            style={{
+              background: "#f4f1ff",
+              borderRadius: "12px",
+              padding: "14px 18px",
+              marginBottom: "25px",
+              color: "#6652e8",
+              fontWeight: "600",
+            }}
+          >
+            Job ID: #{jobId}
+          </div>
+
+          {error && (
+            <div
+              style={{
+                background: "#fff1f1",
+                border: "1px solid #ffcaca",
+                color: "#c62828",
+                padding: "14px 16px",
+                borderRadius: "10px",
+                marginBottom: "20px",
+              }}
+            >
+              ❌ {error}
+            </div>
+          )}
+
+          {success && (
+            <div
+              style={{
+                background: "#effaf3",
+                border: "1px solid #b9e8c8",
+                color: "#1f7a3d",
+                padding: "14px 16px",
+                borderRadius: "10px",
+                marginBottom: "20px",
+              }}
+            >
+              ✅ {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <div style={editFieldStyle}>
+              <label style={editLabelStyle}>
+                Job Title *
+              </label>
+
+              <input
+                type="text"
+                name="job_title"
+                value={form.job_title}
+                onChange={handleChange}
+                placeholder="e.g. Java Backend Developer"
+                style={editInputStyle}
+              />
+            </div>
+
+            <div style={editFieldStyle}>
+              <label style={editLabelStyle}>
+                Company Name *
+              </label>
+
+              <input
+                type="text"
+                name="company_name"
+                value={form.company_name}
+                onChange={handleChange}
+                placeholder="e.g. NovaTech Solutions"
+                style={editInputStyle}
+              />
+            </div>
+
+            <div style={editFieldStyle}>
+              <label style={editLabelStyle}>
+                Location *
+              </label>
+
+              <input
+                type="text"
+                name="location"
+                value={form.location}
+                onChange={handleChange}
+                placeholder="e.g. Pune"
+                style={editInputStyle}
+              />
+            </div>
+
+            <div style={editFieldStyle}>
+              <label style={editLabelStyle}>
+                Job Type *
+              </label>
+
+              <select
+                name="job_type"
+                value={form.job_type}
+                onChange={handleChange}
+                style={editInputStyle}
+              >
+                <option value="">
+                  Select Job Type
+                </option>
+
+                <option value="Full Time">
+                  Full Time
+                </option>
+
+                <option value="Part Time">
+                  Part Time
+                </option>
+
+                <option value="Internship">
+                  Internship
+                </option>
+
+                <option value="Contract">
+                  Contract
+                </option>
+
+                <option value="Remote">
+                  Remote
+                </option>
+              </select>
+            </div>
+
+            <div
+              style={{
+                ...editFieldStyle,
+                background: "#faf9ff",
+                padding: "20px",
+                borderRadius: "14px",
+                border: "2px solid #e5defe",
+              }}
+            >
+              <label
+                style={{
+                  ...editLabelStyle,
+                  color: "#6652e8",
+                }}
+              >
+                Experience Required *
+              </label>
+
+              <input
+                type="text"
+                name="experience_required"
+                value={form.experience_required}
+                onChange={handleChange}
+                placeholder="e.g. 1-3 years"
+                style={{
+                  ...editInputStyle,
+                  border: "2px solid #d8cdfd",
+                }}
+              />
+
+              <small
+                style={{
+                  display: "block",
+                  marginTop: "8px",
+                  color: "#777",
+                }}
+              >
+                Example: 0-2 years, 1-3 years,
+                3-5 years, Fresher
+              </small>
+            </div>
+
+            <div style={editFieldStyle}>
+              <label style={editLabelStyle}>
+                Required Skills *
+              </label>
+
+              <input
+                type="text"
+                name="required_skills"
+                value={form.required_skills}
+                onChange={handleChange}
+                placeholder="Java, Spring Boot, Hibernate, REST API, PostgreSQL"
+                style={editInputStyle}
+              />
+
+              <small
+                style={{
+                  display: "block",
+                  marginTop: "8px",
+                  color: "#777",
+                }}
+              >
+                Separate skills using commas.
+              </small>
+            </div>
+
+            <div style={editFieldStyle}>
+              <label style={editLabelStyle}>
+                Job Description
+              </label>
+
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={handleChange}
+                placeholder="Enter the job description..."
+                rows={7}
+                style={{
+                  ...editInputStyle,
+                  resize: "vertical",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+                marginTop: "30px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  navigate("/recruiter/jobs")
+                }
+                disabled={saving}
+                className="btn btn-outline"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="btn btn-primary"
+              >
+                {saving
+                  ? "Saving..."
+                  : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const editFieldStyle = {
+  marginBottom: "22px",
+};
+
+const editLabelStyle = {
+  display: "block",
+  marginBottom: "8px",
+  fontSize: "14px",
+  fontWeight: "700",
+  color: "#30354d",
+};
+
+const editInputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "13px 15px",
+  borderRadius: "10px",
+  border: "1px solid #dcdfea",
+  background: "#fff",
+  color: "#20243a",
+  fontSize: "15px",
+};
 
 /* ============================================================
    ROUTER
@@ -3240,27 +5029,39 @@ function App() {
 
 
       {/* ======================================================
-          RECRUITER JOBS
-      ====================================================== */}
+    RECRUITER JOBS
+====================================================== */}
 
-      <Route
-        path="/recruiter/jobs"
-        element={
-          <RecruiterJobs />
-        }
-      />
+<Route
+  path="/recruiter/jobs"
+  element={
+    <RecruiterJobs />
+  }
+/>
 
 
-      {/* ======================================================
-          POST NEW JOB
-      ====================================================== */}
+{/* ======================================================
+    EDIT RECRUITER JOB
+====================================================== */}
 
-      <Route
-        path="/recruiter/post-job"
-        element={
-          <RecruiterPostJob />
-        }
-      />
+<Route
+  path="/recruiter/jobs/:jobId/edit"
+  element={
+    <RecruiterEditJob />
+  }
+/>
+
+
+{/* ======================================================
+    POST NEW JOB
+====================================================== */}
+
+<Route
+  path="/recruiter/post-job"
+  element={
+    <RecruiterPostJob />
+  }
+/>
 
 
       {/* ======================================================

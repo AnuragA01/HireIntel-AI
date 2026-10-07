@@ -27,6 +27,10 @@ from app.schemas.recruiter_job import (
 )
 
 
+# ============================================================
+# ROUTER
+# ============================================================
+
 router = APIRouter(
     prefix="/recruiter",
     tags=["Recruiter"],
@@ -51,6 +55,7 @@ def normalize_text(value):
 
         "python developer"
     """
+
     if value is None:
         return ""
 
@@ -73,6 +78,7 @@ def normalize_skills(value):
 
     are treated as the same skill set.
     """
+
     if not value:
         return ""
 
@@ -155,22 +161,30 @@ def create_job(
     for existing_job in existing_jobs:
 
         same_job_title = (
-            normalize_text(existing_job.job_title)
+            normalize_text(
+                existing_job.job_title
+            )
             == new_job_title
         )
 
         same_company = (
-            normalize_text(existing_job.company_name)
+            normalize_text(
+                existing_job.company_name
+            )
             == new_company_name
         )
 
         same_location = (
-            normalize_text(existing_job.location)
+            normalize_text(
+                existing_job.location
+            )
             == new_location
         )
 
         same_job_type = (
-            normalize_text(existing_job.job_type)
+            normalize_text(
+                existing_job.job_type
+            )
             == new_job_type
         )
 
@@ -354,7 +368,11 @@ def update_job(
     )
 
     for field, value in update_data.items():
-        setattr(job, field, value)
+        setattr(
+            job,
+            field,
+            value
+        )
 
     try:
         db.commit()
@@ -457,6 +475,10 @@ def get_ranked_candidates(
     db: Session = Depends(get_db),
 ):
 
+    # --------------------------------------------------------
+    # ONLY RECRUITERS CAN ACCESS THIS ENDPOINT
+    # --------------------------------------------------------
+
     if current_user.role != "recruiter":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -464,7 +486,7 @@ def get_ranked_candidates(
         )
 
     # --------------------------------------------------------
-    # Verify job belongs to recruiter
+    # VERIFY JOB BELONGS TO RECRUITER
     # --------------------------------------------------------
 
     job = (
@@ -483,7 +505,7 @@ def get_ranked_candidates(
         )
 
     # --------------------------------------------------------
-    # Get matches sorted by highest score
+    # GET ALL MATCH RECORDS
     # --------------------------------------------------------
 
     matches = (
@@ -491,18 +513,63 @@ def get_ranked_candidates(
         .filter(
             JobMatch.job_id == job_id
         )
-        .order_by(
-            JobMatch.match_score.desc()
-        )
         .all()
+    )
+
+    # --------------------------------------------------------
+    # SAFE SCORE CONVERTER
+    # --------------------------------------------------------
+
+    def get_numeric_score(match):
+        raw_score = match.match_score
+
+        if (
+            raw_score is None
+            or raw_score == ""
+        ):
+            return -1.0
+
+        try:
+            score = float(
+                raw_score
+            )
+
+            if score != score:
+                return -1.0
+
+            return score
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return -1.0
+
+    # --------------------------------------------------------
+    # SORT MATCHES
+    # --------------------------------------------------------
+
+    matches.sort(
+        key=get_numeric_score,
+        reverse=True,
     )
 
     candidates = []
 
+    # --------------------------------------------------------
+    # PREVENT DUPLICATES
+    # --------------------------------------------------------
+
+    seen_candidates = set()
+
+    # --------------------------------------------------------
+    # BUILD CANDIDATE LIST
+    # --------------------------------------------------------
+
     for match in matches:
 
         # ----------------------------------------------------
-        # Find resume
+        # FIND RESUME
         # ----------------------------------------------------
 
         resume = (
@@ -517,7 +584,7 @@ def get_ranked_candidates(
             continue
 
         # ----------------------------------------------------
-        # Find candidate
+        # FIND CANDIDATE
         # ----------------------------------------------------
 
         candidate = (
@@ -533,26 +600,177 @@ def get_ranked_candidates(
             continue
 
         # ----------------------------------------------------
-        # Build candidate result
+        # DUPLICATE CHECK
+        # ----------------------------------------------------
+
+        candidate_key = (
+            candidate.id,
+            resume.id,
+        )
+
+        if candidate_key in seen_candidates:
+            continue
+
+        seen_candidates.add(
+            candidate_key
+        )
+
+        # ----------------------------------------------------
+        # MATCH SCORE
+        # ----------------------------------------------------
+
+        raw_match_score = (
+            match.match_score
+        )
+
+        if (
+            raw_match_score is None
+            or raw_match_score == ""
+        ):
+            safe_match_score = 0
+        else:
+            try:
+                safe_match_score = float(
+                    raw_match_score
+                )
+
+                if (
+                    safe_match_score !=
+                    safe_match_score
+                ):
+                    safe_match_score = 0
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                safe_match_score = 0
+
+        # ----------------------------------------------------
+        # KEEP SCORE INSIDE 0-100
+        # ----------------------------------------------------
+
+        safe_match_score = min(
+            max(
+                safe_match_score,
+                0,
+            ),
+            100,
+        )
+
+        # ----------------------------------------------------
+        # EXPERIENCE MATCH
+        # ----------------------------------------------------
+
+        raw_experience_match = (
+            match.experience_match
+        )
+
+        if (
+            raw_experience_match is None
+            or raw_experience_match == ""
+        ):
+            safe_experience_match = 0
+        else:
+            try:
+                safe_experience_match = float(
+                    raw_experience_match
+                )
+
+                if (
+                    safe_experience_match !=
+                    safe_experience_match
+                ):
+                    safe_experience_match = 0
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                safe_experience_match = 0
+
+        # ----------------------------------------------------
+        # KEEP EXPERIENCE MATCH INSIDE 0-100
+        # ----------------------------------------------------
+
+        safe_experience_match = min(
+            max(
+                safe_experience_match,
+                0,
+            ),
+            100,
+        )
+
+        # ----------------------------------------------------
+        # CREATE RESPONSE
         # ----------------------------------------------------
 
         candidate_result = RecruiterCandidateResponse(
             candidate_id=candidate.id,
-            full_name=candidate.full_name,
-            email=candidate.email,
+
+            full_name=(
+                candidate.full_name
+                or "Candidate"
+            ),
+
+            email=(
+                candidate.email
+                or ""
+            ),
+
             resume_id=resume.id,
-            resume_filename=resume.original_filename,
+
+            resume_filename=(
+                resume.original_filename
+                or ""
+            ),
+
             job_id=job.id,
-            job_title=job.job_title,
-            company_name=job.company_name,
-            match_score=match.match_score or 0,
-            experience_match=match.experience_match or 0,
-            matched_skills=match.matched_skills,
-            missing_skills=match.missing_skills,
-            matched_keywords=match.matched_keywords,
-            missing_keywords=match.missing_keywords,
-            summary=match.summary,
-            recommendations=match.recommendations,
+
+            job_title=(
+                job.job_title
+                or ""
+            ),
+
+            company_name=(
+                job.company_name
+                or ""
+            ),
+
+            match_score=safe_match_score,
+
+            experience_match=safe_experience_match,
+
+            matched_skills=(
+                match.matched_skills
+                or ""
+            ),
+
+            missing_skills=(
+                match.missing_skills
+                or ""
+            ),
+
+            matched_keywords=(
+                match.matched_keywords
+                or ""
+            ),
+
+            missing_keywords=(
+                match.missing_keywords
+                or ""
+            ),
+
+            summary=(
+                match.summary
+                or ""
+            ),
+
+            recommendations=(
+                match.recommendations
+                or ""
+            ),
+
             matched_at=match.created_at,
         )
 
@@ -561,13 +779,36 @@ def get_ranked_candidates(
         )
 
     # --------------------------------------------------------
-    # Return ranked candidates
+    # FINAL SORT
+    # --------------------------------------------------------
+
+    candidates.sort(
+        key=lambda candidate: float(
+            candidate.match_score or 0
+        ),
+        reverse=True,
+    )
+
+    # --------------------------------------------------------
+    # RETURN RESPONSE
     # --------------------------------------------------------
 
     return RecruiterCandidateListResponse(
         job_id=job.id,
-        job_title=job.job_title,
-        company_name=job.company_name,
-        total_candidates=len(candidates),
+
+        job_title=(
+            job.job_title
+            or ""
+        ),
+
+        company_name=(
+            job.company_name
+            or ""
+        ),
+
+        total_candidates=len(
+            candidates
+        ),
+
         candidates=candidates,
     )
