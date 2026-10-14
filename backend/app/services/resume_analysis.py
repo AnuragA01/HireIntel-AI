@@ -1,188 +1,360 @@
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    status,
-)
-
-from sqlalchemy.orm import Session
-
-from app.core.database import get_db
-from app.core.security import get_current_user
-
-from app.models.resume import Resume
-from app.models.resume_analysis import ResumeAnalysis
-from app.models.user import User
-
-from app.schemas.resume_analysis import ResumeAnalysisResponse
-
-from app.services.resume_analysis_service import analyze_resume
+import re
+from typing import Any
 
 
-router = APIRouter(
-    prefix="/resume-analysis",
-    tags=["Resume Analysis"],
-)
+SKILL_KEYWORDS = [
+    "python",
+    "java",
+    "javascript",
+    "typescript",
+    "c++",
+    "c#",
+    "react",
+    "react.js",
+    "node.js",
+    "express.js",
+    "fastapi",
+    "django",
+    "flask",
+    "html",
+    "css",
+    "bootstrap",
+    "sql",
+    "mysql",
+    "postgresql",
+    "mongodb",
+    "git",
+    "github",
+    "docker",
+    "aws",
+    "power bi",
+    "tableau",
+    "excel",
+    "pandas",
+    "numpy",
+    "machine learning",
+    "deep learning",
+    "data analysis",
+    "data science",
+    "rest api",
+    "spring boot",
+    "php",
+    "communication",
+    "problem solving",
+]
 
 
-# ============================================================
-# ANALYZE RESUME
-# ============================================================
+SECTION_ALIASES = {
+    "education": [
+        "education",
+        "academic background",
+        "educational qualifications",
+    ],
+    "experience": [
+        "experience",
+        "work experience",
+        "professional experience",
+        "internship",
+        "internships",
+    ],
+    "projects": [
+        "projects",
+        "academic projects",
+        "personal projects",
+        "project experience",
+    ],
+    "certifications": [
+        "certifications",
+        "certificates",
+        "licenses and certifications",
+    ],
+}
 
-@router.post(
-    "/{resume_id}",
-    response_model=ResumeAnalysisResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-def analyze_resume_endpoint(
-    resume_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+ALL_SECTION_HEADINGS = [
+    heading
+    for headings in SECTION_ALIASES.values()
+    for heading in headings
+] + [
+    "summary",
+    "professional summary",
+    "career objective",
+    "objective",
+    "technical skills",
+    "skills",
+    "achievements",
+    "awards",
+    "languages",
+    "interests",
+    "publications",
+    "responsibilities",
+]
 
-    # --------------------------------------------------------
-    # Find resume belonging to current user
-    # --------------------------------------------------------
 
-    resume = (
-        db.query(Resume)
-        .filter(
-            Resume.id == resume_id,
-            Resume.user_id == current_user.id,
-        )
-        .first()
+def _clean_text(value: Any) -> str:
+    """Normalize extracted resume text."""
+    if value is None:
+        return ""
+
+    text = str(value).replace("\x00", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+
+    return text.strip()
+
+
+def _find_section(text: str, aliases: list[str]) -> str:
+    """Extract a section from plain-text resume content."""
+    headings = sorted(
+        set(ALL_SECTION_HEADINGS),
+        key=len,
+        reverse=True,
     )
 
-    if resume is None:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Resume not found.",
-        )
-
-    # --------------------------------------------------------
-    # Check extracted text
-    # --------------------------------------------------------
-
-    if not resume.extracted_text:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Resume does not contain extracted text.",
-        )
-
-    # --------------------------------------------------------
-    # Run resume analysis
-    # --------------------------------------------------------
-
-    try:
-
-        analysis_result = analyze_resume(
-            resume.extracted_text
-        )
-
-    except Exception as error:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Resume analysis failed: {error}",
-        )
-
-    # --------------------------------------------------------
-    # Convert lists into database-friendly text
-    # --------------------------------------------------------
-
-    skills_text = ", ".join(
-        analysis_result["skills"]
+    heading_pattern = "|".join(
+        re.escape(heading)
+        for heading in headings
     )
 
-    keywords_text = ", ".join(
-        analysis_result["keywords"]
+    alias_pattern = "|".join(
+        re.escape(alias)
+        for alias in sorted(aliases, key=len, reverse=True)
     )
 
-    strengths_text = "\n".join(
-        analysis_result["strengths"]
+    pattern = (
+        rf"(?ims)^[ \t]*(?:{alias_pattern})"
+        rf"[ \t]*:?[ \t]*\n?"
+        rf"(.*?)"
+        rf"(?=^[ \t]*(?:{heading_pattern})"
+        rf"[ \t]*:?[ \t]*(?:\n|$)|\Z)"
     )
 
-    weaknesses_text = "\n".join(
-        analysis_result["weaknesses"]
-    )
+    match = re.search(pattern, text)
 
-    recommendations_text = "\n".join(
-        analysis_result["recommendations"]
-    )
+    if not match:
+        return ""
 
-    # --------------------------------------------------------
-    # Create analysis record
-    # --------------------------------------------------------
-
-    analysis = ResumeAnalysis(
-        resume_id=resume.id,
-        user_id=current_user.id,
-
-        skills=skills_text,
-
-        education=analysis_result["education"],
-
-        experience=analysis_result["experience"],
-
-        projects=analysis_result["projects"],
-
-        certifications=analysis_result["certifications"],
-
-        keywords=keywords_text,
-
-        summary=analysis_result["summary"],
-
-        strengths=strengths_text,
-
-        weaknesses=weaknesses_text,
-
-        recommendations=recommendations_text,
-
-        resume_score=analysis_result["resume_score"],
-    )
-
-    db.add(analysis)
-
-    db.commit()
-
-    db.refresh(analysis)
-
-    return analysis
+    return match.group(1).strip()
 
 
-# ============================================================
-# GET MY RESUME ANALYSIS
-# ============================================================
+def _extract_skills(text: str) -> list[str]:
+    """Find recognized skills in the resume."""
+    lower_text = text.lower()
+    found = []
 
-@router.get(
-    "/{resume_id}",
-    response_model=ResumeAnalysisResponse,
-)
-def get_resume_analysis(
-    resume_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-
-    analysis = (
-        db.query(ResumeAnalysis)
-        .filter(
-            ResumeAnalysis.resume_id == resume_id,
-            ResumeAnalysis.user_id == current_user.id,
-        )
-        .order_by(
-            ResumeAnalysis.analyzed_at.desc()
-        )
-        .first()
-    )
-
-    if analysis is None:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Resume analysis not found.",
+    for skill in SKILL_KEYWORDS:
+        pattern = (
+            r"(?<![a-z0-9+#.])"
+            + re.escape(skill.lower())
+            + r"(?![a-z0-9+#.])"
         )
 
-    return analysis 
+        if re.search(pattern, lower_text):
+            found.append(skill)
+
+    return found
+
+
+def _extract_keywords(
+    text: str,
+    skills: list[str],
+) -> list[str]:
+    """Extract skills and additional resume keywords."""
+    keywords = list(skills)
+
+    common_keywords = [
+        "internship",
+        "project",
+        "teamwork",
+        "leadership",
+        "development",
+        "testing",
+        "deployment",
+        "automation",
+        "database",
+        "problem solving",
+        "communication",
+        "analysis",
+        "design",
+    ]
+
+    lower_text = text.lower()
+
+    for keyword in common_keywords:
+        if keyword in lower_text and keyword not in keywords:
+            keywords.append(keyword)
+
+    return keywords
+
+
+def _build_feedback(
+    text: str,
+    skills: list[str],
+    education: str,
+    experience: str,
+    projects: str,
+    certifications: str,
+) -> tuple[list[str], list[str], list[str]]:
+    """Generate basic resume feedback."""
+    strengths = []
+    weaknesses = []
+    recommendations = []
+
+    if skills:
+        strengths.append(
+            f"Detected {len(skills)} recognized skills."
+        )
+    else:
+        weaknesses.append(
+            "No recognized skills were detected."
+        )
+        recommendations.append(
+            "Add a skills section relevant to your target job."
+        )
+
+    if education:
+        strengths.append("Education details were detected.")
+    else:
+        weaknesses.append(
+            "An education section was not detected."
+        )
+        recommendations.append(
+            "Add your degree, college, graduation year, and academic details."
+        )
+
+    if projects:
+        strengths.append("Project details were detected.")
+    else:
+        weaknesses.append(
+            "A projects section was not detected."
+        )
+        recommendations.append(
+            "Include projects, technologies used, and your contributions."
+        )
+
+    if experience:
+        strengths.append(
+            "Experience or internship details were detected."
+        )
+    else:
+        weaknesses.append(
+            "Experience or internship details were not detected."
+        )
+        recommendations.append(
+            "Include relevant internships, training, or work experience if available."
+        )
+
+    if certifications:
+        strengths.append("Certification details were detected.")
+    else:
+        recommendations.append(
+            "Add relevant certifications if you have completed any."
+        )
+
+    if len(text.split()) < 150:
+        weaknesses.append(
+            "The extracted resume text is relatively short."
+        )
+        recommendations.append(
+            "Check whether all text was extracted from the uploaded resume."
+        )
+
+    recommendations.append(
+        "Tailor your resume to each job description and proofread it carefully."
+    )
+
+    return strengths, weaknesses, recommendations
+
+
+def _calculate_score(
+    text: str,
+    skills: list[str],
+    education: str,
+    experience: str,
+    projects: str,
+    certifications: str,
+) -> int:
+    """Calculate an indicative score, not a validated ATS score."""
+    score = 40
+
+    if skills:
+        score += 15
+    if education:
+        score += 10
+    if experience:
+        score += 10
+    if projects:
+        score += 10
+    if certifications:
+        score += 5
+    if len(text.split()) >= 150:
+        score += 10
+
+    return min(score, 100)
+
+
+def analyze_resume(resume_text: str) -> dict:
+    """Analyze resume text and return all required analysis fields."""
+    text = _clean_text(resume_text)
+
+    if not text:
+        raise ValueError(
+            "Resume text is empty. Upload a resume with readable text."
+        )
+
+    skills = _extract_skills(text)
+
+    education = _find_section(
+        text,
+        SECTION_ALIASES["education"],
+    )
+    experience = _find_section(
+        text,
+        SECTION_ALIASES["experience"],
+    )
+    projects = _find_section(
+        text,
+        SECTION_ALIASES["projects"],
+    )
+    certifications = _find_section(
+        text,
+        SECTION_ALIASES["certifications"],
+    )
+
+    keywords = _extract_keywords(text, skills)
+
+    strengths, weaknesses, recommendations = _build_feedback(
+        text=text,
+        skills=skills,
+        education=education,
+        experience=experience,
+        projects=projects,
+        certifications=certifications,
+    )
+
+    resume_score = _calculate_score(
+        text=text,
+        skills=skills,
+        education=education,
+        experience=experience,
+        projects=projects,
+        certifications=certifications,
+    )
+
+    summary = (
+        f"The resume contains approximately {len(text.split())} words. "
+        f"{len(skills)} recognized skills were detected."
+    )
+
+    return {
+        "skills": skills,
+        "education": education,
+        "experience": experience,
+        "projects": projects,
+        "certifications": certifications,
+        "keywords": keywords,
+        "summary": summary,
+        "strengths": strengths,
+        "weaknesses": weaknesses,
+        "recommendations": recommendations,
+        "resume_score": resume_score,
+    }
