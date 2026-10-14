@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -21,12 +22,24 @@ function CandidateJobMatches() {
         .map((item) =>
           typeof item === "string"
             ? item
-            : item?.msg || item?.message || "Invalid request."
+            : item?.msg || "Invalid request."
         )
         .join(", ");
     }
 
     return fallback;
+  };
+
+  const getScore = (match) => {
+    const score =
+      match?.match_score ??
+      match?.score ??
+      match?.match_percentage ??
+      0;
+
+    const numericScore = Number(score);
+
+    return Number.isFinite(numericScore) ? numericScore : 0;
   };
 
   useEffect(() => {
@@ -49,7 +62,7 @@ function CandidateJobMatches() {
           Accept: "application/json",
         };
 
-        const dashboardResponse = await fetch(
+        const response = await fetch(
           `${API_BASE_URL}/dashboard/candidate`,
           {
             method: "GET",
@@ -57,141 +70,137 @@ function CandidateJobMatches() {
           }
         );
 
-        const dashboardData =
-          await dashboardResponse.json().catch(() => null);
+        const dashboardData = await response
+          .json()
+          .catch(() => null);
 
-        if (dashboardResponse.status === 401) {
+        if (response.status === 401) {
           localStorage.removeItem("hireintel_token");
           navigate("/login", { replace: true });
           return;
         }
 
-        if (!dashboardResponse.ok) {
+        if (!response.ok) {
           throw new Error(
             getErrorMessage(
               dashboardData,
-              "Unable to load your AI job matches."
+              "Unable to load your job matches."
             )
           );
         }
 
-        const dashboardMatches =
-          dashboardData?.job_matches ||
-          dashboardData?.matches ||
+        const rawMatches =
+          dashboardData?.job_matches ??
+          dashboardData?.matches ??
           [];
 
-        const rawMatches = Array.isArray(dashboardMatches)
-          ? dashboardMatches
-          : [];
+        if (!Array.isArray(rawMatches)) {
+          throw new Error(
+            "The dashboard API returned an invalid matches list."
+          );
+        }
 
         /*
-          A candidate can sometimes have more than one match
-          record for the same-looking job. Keep the highest
-          score for each job so the UI does not show duplicates.
-        */
-        const matchMap = new Map();
+         * STEP 1:
+         * Group matches by job_id.
+         *
+         * If a job has several match records, retain only
+         * the record with the highest match score.
+         *
+         * This does not delete any backend records.
+         */
+        const bestMatchByJob = new Map();
 
         rawMatches.forEach((match) => {
           const jobId = match?.job_id;
 
-          if (!jobId) {
+          if (
+            jobId === null ||
+            jobId === undefined ||
+            String(jobId).trim() === ""
+          ) {
             return;
           }
 
           const key = String(jobId);
-          const existing = matchMap.get(key);
-
-          const currentScore = Number(
-            match?.match_score ??
-              match?.score ??
-              match?.match_percentage ??
-              0
-          );
-
-          const existingScore = Number(
-            existing?.match_score ??
-              existing?.score ??
-              existing?.match_percentage ??
-              0
-          );
+          const existingMatch = bestMatchByJob.get(key);
 
           if (
-            !existing ||
-            (Number.isFinite(currentScore) &&
-              currentScore > existingScore)
+            !existingMatch ||
+            getScore(match) > getScore(existingMatch)
           ) {
-            matchMap.set(key, match);
+            bestMatchByJob.set(key, match);
           }
         });
 
-        const normalizedMatches = Array.from(
-          matchMap.values()
-        ).sort((a, b) => {
-          const scoreA = Number(
-            a?.match_score ??
-              a?.score ??
-              a?.match_percentage ??
-              0
-          );
+        /*
+         * STEP 2:
+         * Convert the map to an array and sort by score.
+         * Every job now appears only once.
+         */
+        const uniqueMatches = Array.from(
+          bestMatchByJob.values()
+        ).sort((a, b) => getScore(b) - getScore(a));
 
-          const scoreB = Number(
-            b?.match_score ??
-              b?.score ??
-              b?.match_percentage ??
-              0
-          );
-
-          return scoreB - scoreA;
-        });
-
-        const uniqueJobIds = normalizedMatches
-          .map((match) => match?.job_id)
-          .filter(Boolean);
+        /*
+         * STEP 3:
+         * Fetch details for each distinct job.
+         */
+        const uniqueJobIds = [
+          ...new Set(
+            uniqueMatches.map((match) =>
+              String(match.job_id)
+            )
+          ),
+        ];
 
         const jobResults = await Promise.all(
           uniqueJobIds.map(async (jobId) => {
             try {
-              const response = await fetch(
-                `${API_BASE_URL}/candidate/jobs/${jobId}`,
+              const jobResponse = await fetch(
+                `${API_BASE_URL}/jobs/${jobId}`,
                 {
                   method: "GET",
                   headers,
                 }
               );
 
-              if (!response.ok) {
-                return [String(jobId), null];
+              if (!jobResponse.ok) {
+                console.warn(
+                  `Unable to load job ${jobId}:`,
+                  jobResponse.status
+                );
+
+                return [jobId, null];
               }
 
-              const data = await response.json().catch(() => null);
+              const jobData = await jobResponse
+                .json()
+                .catch(() => null);
 
-              return [String(jobId), data];
-            } catch {
-              return [String(jobId), null];
+              return [jobId, jobData];
+            } catch (err) {
+              console.error(
+                `Error fetching job ${jobId}:`,
+                err
+              );
+
+              return [jobId, null];
             }
           })
         );
 
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
-        const jobMap = Object.fromEntries(jobResults);
+        setJobs(Object.fromEntries(jobResults));
+        setMatches(uniqueMatches);
+      } catch (err) {
+        if (cancelled) return;
 
-        setJobs(jobMap);
-        setMatches(normalizedMatches);
-      } catch (requestError) {
-        if (cancelled) {
-          return;
-        }
-
-        console.error(
-          "Job matches loading error:",
-          requestError
-        );
+        console.error("Failed to load job matches:", err);
 
         setError(
-          requestError?.message ||
+          err?.message ||
             "Unable to connect to the HireIntel AI server."
         );
       } finally {
@@ -208,20 +217,6 @@ function CandidateJobMatches() {
     };
   }, [navigate]);
 
-  const getScore = (match) => {
-    const score =
-      match?.match_score ??
-      match?.score ??
-      match?.match_percentage ??
-      0;
-
-    const numericScore = Number(score);
-
-    return Number.isFinite(numericScore)
-      ? numericScore
-      : 0;
-  };
-
   const getJob = (match) =>
     jobs[String(match?.job_id)] || {};
 
@@ -233,7 +228,7 @@ function CandidateJobMatches() {
       match?.title ||
       job?.job_title ||
       job?.title ||
-      `Job #${match?.job_id || "N/A"}`
+      `Job #${match?.job_id ?? "N/A"}`
     );
   };
 
@@ -252,20 +247,20 @@ function CandidateJobMatches() {
   const getSkills = (match) => {
     const job = getJob(match);
 
-    const skills =
+    const value =
       match?.required_skills ||
       match?.skills ||
       job?.required_skills ||
       job?.skills ||
-      "";
+      [];
 
-    if (Array.isArray(skills)) {
-      return skills;
+    if (Array.isArray(value)) {
+      return value;
     }
 
-    if (typeof skills === "string") {
-      return skills
-        .split(",")
+    if (typeof value === "string") {
+      return value
+        .split(/[,;\n]+/)
         .map((skill) => skill.trim())
         .filter(Boolean);
     }
@@ -275,14 +270,12 @@ function CandidateJobMatches() {
 
   if (loading) {
     return (
-      <div style={styles.centerPage}>
-        <div style={styles.loadingCard}>
-          <div style={styles.logoIcon}>H</div>
-          <h2>Analyzing Job Matches...</h2>
-          <p style={styles.muted}>
-            Loading opportunities matched to your profile.
-          </p>
-        </div>
+      <div style={styles.loadingPage}>
+        <div style={styles.loadingLogo}>H</div>
+        <h2>Loading Your Job Matches...</h2>
+        <p style={styles.muted}>
+          Finding the best opportunities for your profile.
+        </p>
       </div>
     );
   }
@@ -293,61 +286,55 @@ function CandidateJobMatches() {
         <div style={styles.logoContainer}>
           <div style={styles.logoIcon}>H</div>
           <div style={styles.logoText}>
-            HireIntel <span>AI</span>
+            HireIntel AI
           </div>
         </div>
 
-        <div style={styles.sidebarSection}>
-          <p style={styles.sidebarLabel}>CANDIDATE</p>
+        <p style={styles.sidebarLabel}>CANDIDATE</p>
 
-          <NavButton
-            label="Dashboard"
-            icon="▦"
-            onClick={() => navigate("/candidate/dashboard")}
-          />
+        <NavButton
+          icon="▦"
+          label="Dashboard"
+          onClick={() =>
+            navigate("/candidate/dashboard")
+          }
+        />
 
-          <NavButton
-            label="Find Jobs"
-            icon="⌕"
-            onClick={() => navigate("/candidate/jobs")}
-          />
+        <NavButton
+          icon="⌕"
+          label="Find Jobs"
+          onClick={() => navigate("/candidate/jobs")}
+        />
 
-          <NavButton
-            label="My Resumes"
-            icon="▤"
-            onClick={() => navigate("/candidate/resumes")}
-          />
+        <NavButton
+          icon="▤"
+          label="My Resumes"
+          onClick={() => navigate("/candidate/resumes")}
+        />
 
-          <NavButton
-            label="Applications"
-            icon="▣"
-            onClick={() =>
-              navigate("/candidate/applications")
-            }
-          />
+        <NavButton
+          icon="▣"
+          label="Applications"
+          onClick={() =>
+            navigate("/candidate/applications")
+          }
+        />
 
-          <NavButton
-            label="Job Matches"
-            icon="✦"
-            active
-          />
+        <NavButton
+          icon="✦"
+          label="Job Matches"
+          active
+        />
 
-          <NavButton
-            label="Profile"
-            icon="♙"
-            onClick={() => navigate("/candidate/profile")}
-          />
-        </div>
+        <NavButton
+          icon="♙"
+          label="Profile"
+          onClick={() =>
+            navigate("/candidate/profile")
+          }
+        />
 
         <div style={styles.sidebarBottom}>
-          <NavButton
-            label="Settings"
-            icon="⚙"
-            onClick={() =>
-              navigate("/candidate/settings")
-            }
-          />
-
           <button
             type="button"
             style={styles.logoutButton}
@@ -356,8 +343,7 @@ function CandidateJobMatches() {
               navigate("/login", { replace: true });
             }}
           >
-            <span>↪</span>
-            Logout
+            ↪ Logout
           </button>
         </div>
       </aside>
@@ -365,11 +351,11 @@ function CandidateJobMatches() {
       <main style={styles.main}>
         <header style={styles.header}>
           <div>
-            <p style={styles.eyebrow}>AI CAREER INTELLIGENCE</p>
+            <p style={styles.eyebrow}>
+              AI CAREER INTELLIGENCE
+            </p>
 
-            <h1 style={styles.title}>
-              Job Matches
-            </h1>
+            <h1 style={styles.pageTitle}>Job Matches</h1>
 
             <p style={styles.subtitle}>
               Discover jobs ranked using your resume and
@@ -390,9 +376,10 @@ function CandidateJobMatches() {
           <div style={styles.errorBox}>
             <strong>Unable to load job matches</strong>
             <p>{error}</p>
+
             <button
               type="button"
-              style={styles.retryButton}
+              style={styles.primaryButton}
               onClick={() => window.location.reload()}
             >
               Try Again
@@ -400,25 +387,7 @@ function CandidateJobMatches() {
           </div>
         )}
 
-        {!error && matches.length === 0 && (
-          <div style={styles.emptyCard}>
-            <div style={styles.emptyIcon}>✦</div>
-            <h2>No AI matches yet</h2>
-            <p>
-              Upload a resume and explore available jobs
-              to generate job matching insights.
-            </p>
-            <button
-              type="button"
-              style={styles.primaryButton}
-              onClick={() => navigate("/candidate/jobs")}
-            >
-              Explore Jobs →
-            </button>
-          </div>
-        )}
-
-        {!error && matches.length > 0 && (
+        {!error && (
           <>
             <section style={styles.summaryGrid}>
               <SummaryCard
@@ -430,9 +399,13 @@ function CandidateJobMatches() {
               <SummaryCard
                 icon="◎"
                 label="Highest Match"
-                value={`${Math.max(
-                  ...matches.map(getScore)
-                ).toFixed(2)}%`}
+                value={
+                  matches.length
+                    ? `${Math.max(
+                        ...matches.map(getScore)
+                      ).toFixed(2)}%`
+                    : "0.00%"
+                }
               />
 
               <SummaryCard
@@ -441,7 +414,7 @@ function CandidateJobMatches() {
                 value={
                   matches[0]?.resume_id
                     ? `#${matches[0].resume_id}`
-                    : "Current"
+                    : "—"
                 }
               />
 
@@ -453,185 +426,190 @@ function CandidateJobMatches() {
             </section>
 
             <section>
-              <div style={styles.sectionHeader}>
-                <div>
-                  <h2 style={styles.sectionTitle}>
-                    Recommended Opportunities
-                  </h2>
-                  <p style={styles.sectionText}>
-                    Your current AI-powered job matches.
+              <h2 style={styles.sectionTitle}>
+                Recommended Opportunities
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                Your highest-scoring match for each job.
+              </p>
+
+              {matches.length === 0 ? (
+                <div style={styles.emptyCard}>
+                  <div style={styles.emptyIcon}>✦</div>
+                  <h2>No job matches yet</h2>
+                  <p style={styles.muted}>
+                    Explore jobs and use your resume to
+                    discover suitable opportunities.
                   </p>
+
+                  <button
+                    type="button"
+                    style={styles.primaryButton}
+                    onClick={() =>
+                      navigate("/candidate/jobs")
+                    }
+                  >
+                    Explore Jobs →
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <div style={styles.matchList}>
+                  {matches.map((match) => {
+                    const score = getScore(match);
+                    const skills = getSkills(match);
+                    const job = getJob(match);
 
-              <div style={styles.matchList}>
-                {matches.map((match, index) => {
-                  const score = getScore(match);
-                  const skills = getSkills(match);
-                  const job = getJob(match);
-
-                  return (
-                    <article
-                      key={
-                        match?.id ||
-                        `${match?.job_id || "job"}-${index}`
-                      }
-                      style={styles.matchCard}
-                    >
-                      <div style={styles.matchTop}>
-                        <div style={styles.jobIcon}>
-                          💼
-                        </div>
-
-                        <div style={styles.jobInfo}>
-                          <div style={styles.aiBadge}>
-                            ✨ AI MATCH
+                    return (
+                      <article
+                        key={String(match.job_id)}
+                        style={styles.matchCard}
+                      >
+                        <div style={styles.matchTop}>
+                          <div style={styles.jobIcon}>
+                            💼
                           </div>
 
-                          <h3 style={styles.jobTitle}>
-                            {getTitle(match)}
-                          </h3>
+                          <div style={styles.jobInfo}>
+                            <span style={styles.aiBadge}>
+                              ✨ AI MATCH
+                            </span>
 
-                          <p style={styles.company}>
-                            {getCompany(match)}
+                            <h3 style={styles.jobTitle}>
+                              {getTitle(match)}
+                            </h3>
+
+                            <p style={styles.company}>
+                              {getCompany(match)}
+                            </p>
+
+                            <div style={styles.metaRow}>
+                              {job?.location && (
+                                <span>
+                                  📍 {job.location}
+                                </span>
+                              )}
+
+                              {job?.job_type && (
+                                <span>
+                                  💼 {job.job_type}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={styles.scoreArea}>
+                            <span style={styles.scoreLabel}>
+                              AI Match
+                            </span>
+
+                            <strong style={styles.scoreValue}>
+                              {score.toFixed(2)}%
+                            </strong>
+                          </div>
+                        </div>
+
+                        {skills.length > 0 && (
+                          <div style={styles.skillsArea}>
+                            <p style={styles.skillsLabel}>
+                              Required Skills
+                            </p>
+
+                            <div style={styles.skillList}>
+                              {skills.slice(0, 8).map(
+                                (skill, index) => (
+                                  <span
+                                    key={`${skill}-${index}`}
+                                    style={styles.skillBadge}
+                                  >
+                                    {skill}
+                                  </span>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={styles.cardFooter}>
+                          <p style={styles.matchNote}>
+                            Match score based on available
+                            resume and job information.
                           </p>
 
-                          <div style={styles.metaRow}>
-                            {job?.location && (
-                              <span>
-                                📍 {job.location}
-                              </span>
-                            )}
-
-                            {job?.job_type && (
-                              <span>
-                                💼 {job.job_type}
-                              </span>
-                            )}
-
-                            {job?.experience_required && (
-                              <span>
-                                ◷ {job.experience_required}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div style={styles.scoreArea}>
-                          <span style={styles.scoreLabel}>
-                            AI Match
-                          </span>
-                          <strong style={styles.scoreValue}>
-                            {score.toFixed(2)}%
-                          </strong>
-                        </div>
-                      </div>
-
-                      {skills.length > 0 && (
-                        <div style={styles.skillsArea}>
-                          <span style={styles.skillsLabel}>
-                            Required Skills
-                          </span>
-
-                          <div style={styles.skillList}>
-                            {skills.slice(0, 8).map(
-                              (skill) => (
-                                <span
-                                  key={skill}
-                                  style={styles.skillBadge}
-                                >
-                                  {skill}
-                                </span>
-                              )
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      <div style={styles.cardFooter}>
-                        <span style={styles.matchNote}>
-                          Match score based on available
-                          resume and job information.
-                        </span>
-
-                        <div style={styles.actions}>
-                          <button
-                            type="button"
-                            style={styles.viewButton}
-                            disabled={!match?.job_id}
-                            onClick={() => {
-                              if (match?.job_id) {
+                          <div style={styles.actions}>
+                            <button
+                              type="button"
+                              style={styles.viewButton}
+                              onClick={() =>
                                 navigate(
                                   `/candidate/jobs/${match.job_id}`
-                                );
+                                )
                               }
-                            }}
-                          >
-                            View Job
-                          </button>
+                            >
+                              View Job
+                            </button>
 
-                          <button
-                            type="button"
-                            style={styles.applyButton}
-                            disabled={!match?.job_id}
-                            onClick={() => {
-                              if (match?.job_id) {
+                            <button
+                              type="button"
+                              style={styles.applyButton}
+                              onClick={() =>
                                 navigate(
                                   `/candidate/jobs/${match.job_id}/apply`
-                                );
+                                )
                               }
-                            }}
-                          >
-                            Apply Now →
-                          </button>
+                            >
+                              Apply Now →
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section style={styles.infoCard}>
+              <div style={styles.infoIcon}>✦</div>
+
+              <div>
+                <h3 style={styles.infoTitle}>
+                  How HireIntel AI matching works
+                </h3>
+
+                <p style={styles.infoText}>
+                  HireIntel AI compares resume and job
+                  information using skills, keywords,
+                  text similarity and experience-related
+                  signals. Each job displays its highest
+                  available match score. This score is
+                  informational and is not a hiring decision.
+                </p>
               </div>
             </section>
           </>
         )}
-
-        <div style={styles.infoCard}>
-          <div style={styles.infoIcon}>✦</div>
-
-          <div>
-            <h3 style={styles.infoTitle}>
-              How HireIntel AI matching works
-            </h3>
-
-            <p style={styles.infoText}>
-              HireIntel AI compares available resume and job
-              information using skills, keywords, text similarity
-              and experience-related signals. The resulting
-              percentage is an AI matching score, not a hiring
-              decision.
-            </p>
-          </div>
-        </div>
       </main>
     </div>
   );
 }
 
 function NavButton({
-  label,
   icon,
+  label,
   active = false,
   onClick,
 }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       style={{
         ...styles.navItem,
         ...(active ? styles.activeNavItem : {}),
       }}
-      onClick={onClick}
     >
-      <span>{icon}</span>
+      <span style={styles.navIcon}>{icon}</span>
       {label}
     </button>
   );
@@ -643,12 +621,8 @@ function SummaryCard({ icon, label, value }) {
       <div style={styles.summaryIcon}>{icon}</div>
 
       <div>
-        <span style={styles.summaryLabel}>
-          {label}
-        </span>
-        <strong style={styles.summaryValue}>
-          {value}
-        </strong>
+        <span style={styles.summaryLabel}>{label}</span>
+        <strong style={styles.summaryValue}>{value}</strong>
       </div>
     </div>
   );
@@ -660,12 +634,12 @@ const styles = {
     display: "flex",
     background: "#f7f8fc",
     color: "#172033",
-    fontFamily:
-      "Inter, Arial, Helvetica, sans-serif",
+    fontFamily: "Inter, Arial, sans-serif",
   },
 
   sidebar: {
     width: "250px",
+    minWidth: "220px",
     minHeight: "100vh",
     background: "#fff",
     borderRight: "1px solid #e8eaf0",
@@ -675,43 +649,39 @@ const styles = {
     boxSizing: "border-box",
     position: "sticky",
     top: 0,
+    alignSelf: "flex-start",
   },
 
   logoContainer: {
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    padding: "5px 10px 35px",
+    padding: "5px 10px 38px",
   },
 
   logoIcon: {
-    width: "42px",
-    height: "42px",
+    width: "43px",
+    height: "43px",
     borderRadius: "12px",
-    background:
-      "linear-gradient(135deg, #6d5ce7, #8a72f2)",
+    background: "#705cf0",
     color: "#fff",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "22px",
+    fontSize: "23px",
     fontWeight: "800",
-    flexShrink: 0,
   },
 
   logoText: {
     fontSize: "20px",
     fontWeight: "800",
-  },
-
-  sidebarSection: {
-    flex: 1,
+    whiteSpace: "nowrap",
   },
 
   sidebarLabel: {
-    fontSize: "11px",
-    fontWeight: "700",
     color: "#a0a5b5",
+    fontSize: "11px",
+    fontWeight: "800",
     letterSpacing: "1px",
     padding: "0 12px",
     marginBottom: "10px",
@@ -721,7 +691,7 @@ const styles = {
     width: "100%",
     border: "none",
     background: "transparent",
-    color: "#646b7c",
+    color: "#5e6678",
     padding: "13px 14px",
     borderRadius: "10px",
     display: "flex",
@@ -739,9 +709,14 @@ const styles = {
     color: "#6354e8",
   },
 
+  navIcon: {
+    width: "14px",
+    textAlign: "center",
+  },
+
   sidebarBottom: {
-    borderTop: "1px solid #eeeeee",
-    paddingTop: "18px",
+    marginTop: "auto",
+    paddingTop: "25px",
   },
 
   logoutButton: {
@@ -751,19 +726,16 @@ const styles = {
     color: "#d05252",
     padding: "13px 14px",
     borderRadius: "10px",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
+    textAlign: "left",
     fontSize: "14px",
     fontWeight: "600",
     cursor: "pointer",
-    textAlign: "left",
   },
 
   main: {
     flex: 1,
-    padding: "38px 45px 60px",
     minWidth: 0,
+    padding: "38px 45px 60px",
   },
 
   header: {
@@ -771,7 +743,7 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "flex-start",
     gap: "20px",
-    marginBottom: "28px",
+    marginBottom: "30px",
   },
 
   eyebrow: {
@@ -782,7 +754,7 @@ const styles = {
     margin: "0 0 8px",
   },
 
-  title: {
+  pageTitle: {
     margin: 0,
     fontSize: "34px",
     fontWeight: "800",
@@ -790,7 +762,7 @@ const styles = {
 
   subtitle: {
     color: "#7a8090",
-    marginTop: "8px",
+    marginTop: "10px",
     fontSize: "14px",
     lineHeight: "1.6",
   },
@@ -799,7 +771,7 @@ const styles = {
     border: "none",
     background: "#6657e8",
     color: "#fff",
-    padding: "13px 20px",
+    padding: "13px 19px",
     borderRadius: "10px",
     fontWeight: "700",
     cursor: "pointer",
@@ -808,10 +780,9 @@ const styles = {
 
   summaryGrid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(4, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
     gap: "18px",
-    marginBottom: "35px",
+    marginBottom: "36px",
   },
 
   summaryCard: {
@@ -821,19 +792,21 @@ const styles = {
     padding: "20px",
     display: "flex",
     alignItems: "center",
-    gap: "15px",
+    gap: "14px",
+    minWidth: 0,
   },
 
   summaryIcon: {
-    width: "48px",
-    height: "48px",
+    width: "49px",
+    height: "49px",
+    flexShrink: 0,
     borderRadius: "14px",
     background: "#f0edff",
     color: "#6657e8",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "20px",
+    fontSize: "21px",
   },
 
   summaryLabel: {
@@ -846,21 +819,19 @@ const styles = {
   summaryValue: {
     display: "block",
     fontSize: "24px",
-  },
-
-  sectionHeader: {
-    marginBottom: "18px",
+    color: "#111827",
   },
 
   sectionTitle: {
-    margin: 0,
+    margin: "0 0 7px",
     fontSize: "23px",
+    fontWeight: "800",
   },
 
-  sectionText: {
-    color: "#8a90a0",
+  sectionSubtitle: {
+    color: "#858b99",
     fontSize: "13px",
-    marginTop: "7px",
+    marginBottom: "20px",
   },
 
   matchList: {
@@ -913,6 +884,7 @@ const styles = {
   jobTitle: {
     margin: 0,
     fontSize: "20px",
+    fontWeight: "750",
   },
 
   company: {
@@ -948,7 +920,7 @@ const styles = {
 
   scoreValue: {
     color: "#6657e8",
-    fontSize: "24px",
+    fontSize: "27px",
     lineHeight: "1.1",
     fontWeight: "800",
   },
@@ -960,11 +932,10 @@ const styles = {
   },
 
   skillsLabel: {
-    display: "block",
     fontSize: "11px",
     fontWeight: "700",
     color: "#777f90",
-    marginBottom: "10px",
+    margin: "0 0 10px",
   },
 
   skillList: {
@@ -984,22 +955,25 @@ const styles = {
 
   cardFooter: {
     borderTop: "1px solid #edf0f5",
-    marginTop: "20px",
+    marginTop: "22px",
     paddingTop: "17px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     gap: "15px",
+    flexWrap: "wrap",
   },
 
   matchNote: {
     color: "#9298a5",
     fontSize: "11px",
+    margin: 0,
   },
 
   actions: {
     display: "flex",
     gap: "9px",
+    flexWrap: "wrap",
   },
 
   viewButton: {
@@ -1025,28 +999,27 @@ const styles = {
   emptyCard: {
     background: "#fff",
     border: "1px solid #e8eaf0",
-    borderRadius: "20px",
-    padding: "65px 30px",
+    borderRadius: "18px",
+    padding: "55px 25px",
     textAlign: "center",
   },
 
   emptyIcon: {
-    width: "65px",
-    height: "65px",
+    width: "60px",
+    height: "60px",
     borderRadius: "50%",
     background: "#f0edff",
     color: "#6657e8",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    margin: "0 auto 20px",
+    margin: "0 auto 18px",
     fontSize: "25px",
   },
 
   infoCard: {
     marginTop: "25px",
-    background:
-      "linear-gradient(135deg, #f4f1ff, #fff)",
+    background: "linear-gradient(135deg, #f4f1ff, #fff)",
     border: "1px solid #e2dcff",
     borderRadius: "18px",
     padding: "22px",
@@ -1068,7 +1041,7 @@ const styles = {
     margin: "7px 0 0",
     color: "#747b8c",
     fontSize: "13px",
-    lineHeight: "1.6",
+    lineHeight: "1.7",
   },
 
   errorBox: {
@@ -1076,42 +1049,38 @@ const styles = {
     border: "1px solid #ffd4d4",
     color: "#b42323",
     borderRadius: "14px",
-    padding: "16px 20px",
-    marginBottom: "20px",
+    padding: "18px 20px",
+    marginBottom: "22px",
   },
 
-  retryButton: {
-    border: "none",
-    background: "#6657e8",
-    color: "#fff",
-    padding: "9px 14px",
-    borderRadius: "8px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-
-  centerPage: {
+  loadingPage: {
     minHeight: "100vh",
     background: "#f7f8fc",
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    padding: "30px",
+    padding: "25px",
+    textAlign: "center",
+    fontFamily: "Inter, Arial, sans-serif",
   },
 
-  loadingCard: {
-    background: "#fff",
-    border: "1px solid #e8eaf0",
-    borderRadius: "20px",
-    padding: "50px",
-    textAlign: "center",
-    width: "100%",
-    maxWidth: "500px",
+  loadingLogo: {
+    width: "52px",
+    height: "52px",
+    borderRadius: "14px",
+    background: "#705cf0",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "25px",
+    fontWeight: "800",
   },
 
   muted: {
     color: "#7d8392",
-    lineHeight: "1.6",
+    lineHeight: "1.7",
   },
 };
 

@@ -1,11 +1,105 @@
+
+"""
+HireIntel AI - Resume and Job Matching Service
+
+Responsibilities:
+- Extract skills from resumes and job descriptions.
+- Normalize skill names and common variations.
+- Compare job keywords against resume keywords.
+- Calculate TF-IDF text similarity.
+- Estimate experience alignment.
+- Generate actionable recommendations.
+
+Public interface:
+    match_resume_with_job(
+        resume_text,
+        job_description,
+        required_skills_text=None,
+    )
+
+The response keys are kept compatible with the existing API.
+"""
+
 import re
+from functools import lru_cache
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from app.services.resume_analysis_service import (
-    SKILLS_DATABASE,
-)
+from app.services.resume_analysis_service import SKILLS_DATABASE
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+SKILL_WEIGHT = 0.50
+KEYWORD_WEIGHT = 0.20
+TEXT_SIMILARITY_WEIGHT = 0.30
+
+# Common variations mapped to a consistent skill name.
+SKILL_ALIASES = {
+    "rest api": "REST APIs",
+    "rest apis": "REST APIs",
+    "restful api": "REST APIs",
+    "restful apis": "REST APIs",
+    "postgres": "PostgreSQL",
+    "postgresql": "PostgreSQL",
+    "js": "JavaScript",
+    "javascript": "JavaScript",
+    "ts": "TypeScript",
+    "typescript": "TypeScript",
+    "py": "Python",
+    "node": "Node.js",
+    "nodejs": "Node.js",
+    "node.js": "Node.js",
+    "reactjs": "React",
+    "react.js": "React",
+    "vuejs": "Vue.js",
+    "vue.js": "Vue.js",
+    "nextjs": "Next.js",
+    "next.js": "Next.js",
+    "expressjs": "Express.js",
+    "express.js": "Express.js",
+    "mongo": "MongoDB",
+    "mongodb": "MongoDB",
+    "mysql": "MySQL",
+    "amazon web services": "AWS",
+    "amazon aws": "AWS",
+    "google cloud platform": "Google Cloud",
+    "gcp": "Google Cloud",
+    "continuous integration": "CI/CD",
+    "continuous deployment": "CI/CD",
+    "continuous integration and continuous deployment": "CI/CD",
+    "machine learning": "Machine Learning",
+    "ml": "Machine Learning",
+    "artificial intelligence": "Artificial Intelligence",
+    "ai": "Artificial Intelligence",
+    "scikit learn": "scikit-learn",
+    "sklearn": "scikit-learn",
+    "c sharp": "C#",
+    "c plus plus": "C++",
+    "dotnet": ".NET",
+    "asp net": "ASP.NET",
+    "asp.net core": "ASP.NET Core",
+    "power bi": "Power BI",
+    "ms excel": "Excel",
+}
+
+STOP_WORDS = {
+    "the", "and", "for", "with", "from", "that", "this",
+    "are", "you", "your", "our", "will", "have", "has",
+    "job", "work", "working", "looking", "using", "years",
+    "year", "experience", "required", "developer",
+    "development", "role", "candidate", "team", "skills",
+    "skill", "must", "should", "need", "needs",
+    "responsibilities", "responsibility", "ability",
+    "strong", "good", "excellent", "including", "such",
+    "within", "across", "about", "into", "their", "them",
+    "they", "who", "what", "when", "where", "which",
+    "will", "can", "may", "not", "all", "any", "each",
+    "more", "less", "than", "also", "both", "per",
+}
 
 
 # ============================================================
@@ -13,138 +107,180 @@ from app.services.resume_analysis_service import (
 # ============================================================
 
 def normalize_text(text: str) -> str:
-    """
-    Convert text to lowercase and normalize whitespace.
-    """
-
+    """Normalize text for matching and comparison."""
     if not text:
         return ""
 
-    text = text.lower()
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text,
-    )
+    text = str(text).lower()
+    text = text.replace("\u2013", "-").replace("\u2014", "-")
+    text = re.sub(r"\s+", " ", text)
 
     return text.strip()
 
 
+def normalize_skill(skill: str) -> str:
+    """
+    Normalize a skill name while preserving a readable
+    canonical representation.
+    """
+    skill = str(skill or "").strip()
+
+    if not skill:
+        return ""
+
+    key = normalize_text(skill)
+    key = re.sub(r"\s+", " ", key).strip(" ,;:")
+
+    if key in SKILL_ALIASES:
+        return SKILL_ALIASES[key]
+
+    # Otherwise preserve the original skill's spelling.
+    return skill
+
+
+def _skill_key(skill: str) -> str:
+    """Return a normalized comparison key for a skill."""
+    canonical = normalize_skill(skill)
+    return normalize_text(canonical)
+
+
+def _unique_skills(skills: list[str]) -> list[str]:
+    """Remove duplicate skills while preserving their order."""
+    results = []
+    seen = set()
+
+    for skill in skills:
+        canonical = normalize_skill(skill)
+
+        if not canonical:
+            continue
+
+        key = _skill_key(canonical)
+
+        if key not in seen:
+            seen.add(key)
+            results.append(canonical)
+
+    return results
+
+
 # ============================================================
-# EXTRACT SKILLS
+# SKILL DATABASE HELPERS
 # ============================================================
 
-def extract_skills_from_text(
-    text: str,
-) -> list[str]:
+@lru_cache(maxsize=1)
+def _get_database_skills() -> tuple[str, ...]:
     """
-    Extract known technical skills from text
-    using the existing skills database.
-    """
+    Read skills from SKILLS_DATABASE.
 
-    normalized_text = normalize_text(
-        text
+    Supports a list, tuple, set, dictionary, or nested
+    dictionary/list structure.
+    """
+    collected = []
+
+    def collect(value):
+        if isinstance(value, str):
+            value = value.strip()
+
+            if value:
+                collected.append(value)
+
+        elif isinstance(value, dict):
+            # Skill databases are commonly dictionaries whose
+            # keys or values contain skill names.
+            for key, item in value.items():
+                if isinstance(key, str):
+                    collected.append(key)
+
+                collect(item)
+
+        elif isinstance(value, (list, tuple, set)):
+            for item in value:
+                collect(item)
+
+    collect(SKILLS_DATABASE)
+
+    return tuple(_unique_skills(collected))
+
+
+def _skill_pattern(skill: str):
+    """
+    Build a regex that recognizes a skill as a complete term.
+
+    This avoids matching 'Java' inside 'JavaScript'.
+    """
+    escaped = re.escape(skill)
+
+    # Treat whitespace and hyphens as interchangeable
+    # separators for common skill-name variations.
+    escaped = escaped.replace(r"\ ", r"[\s\-]+")
+
+    return re.compile(
+        rf"(?<!\w){escaped}(?!\w)",
+        flags=re.IGNORECASE,
     )
 
-    found_skills = []
 
-    for skill in SKILLS_DATABASE:
+def extract_skills_from_text(text: str) -> list[str]:
+    """Extract recognized skills from a block of text."""
+    if not text:
+        return []
 
-        normalized_skill = normalize_text(
-            skill
-        )
+    normalized = normalize_text(text)
+    found = []
 
-        pattern = (
-            r"(?<![a-z0-9])"
-            + re.escape(normalized_skill)
-            + r"(?![a-z0-9])"
-        )
+    for skill in _get_database_skills():
+        pattern = _skill_pattern(skill)
 
-        if re.search(
-            pattern,
-            normalized_text,
-        ):
-            found_skills.append(skill)
+        if pattern.search(normalized):
+            found.append(normalize_skill(skill))
 
-    return sorted(
-        found_skills,
-        key=str.lower,
-    )
+    # Handle known aliases even if the alias is not listed
+    # explicitly in SKILLS_DATABASE.
+    for alias, canonical in SKILL_ALIASES.items():
+        if _skill_pattern(alias).search(normalized):
+            found.append(canonical)
+
+    return _unique_skills(found)
 
 
 # ============================================================
-# EXTRACT KEYWORDS
+# KEYWORD EXTRACTION
 # ============================================================
 
-def extract_keywords(
-    text: str,
-) -> list[str]:
+def extract_keywords(text: str) -> list[str]:
     """
-    Extract useful keywords while removing
-    common stop words.
+    Extract useful, unique keywords.
+
+    Keeps technical terms such as C++, C#, .NET, Node.js,
+    REST APIs and CI/CD.
     """
+    normalized = normalize_text(text)
 
-    normalized_text = normalize_text(
-        text
+    if not normalized:
+        return []
+
+    # Find words and common technical terms.
+    tokens = re.findall(
+        r"(?<!\w)[a-z][a-z0-9]*(?:[+#.][a-z0-9+#.]*)*",
+        normalized,
     )
-
-    words = re.findall(
-        r"\b[a-zA-Z][a-zA-Z0-9+#.]*\b",
-        normalized_text,
-    )
-
-    stop_words = {
-        "the",
-        "and",
-        "for",
-        "with",
-        "from",
-        "that",
-        "this",
-        "are",
-        "you",
-        "your",
-        "our",
-        "will",
-        "have",
-        "has",
-        "job",
-        "work",
-        "working",
-        "looking",
-        "using",
-        "years",
-        "year",
-        "experience",
-        "required",
-        "developer",
-        "development",
-        "role",
-        "candidate",
-        "team",
-        "skills",
-        "skill",
-        "must",
-        "should",
-        "need",
-        "needs",
-        "responsibilities",
-        "responsibility",
-    }
 
     keywords = []
+    seen = set()
 
-    for word in words:
+    for token in tokens:
+        token = token.strip(".+#")
 
-        if len(word) < 3:
+        if len(token) < 2:
             continue
 
-        if word in stop_words:
+        if token in STOP_WORDS:
             continue
 
-        if word not in keywords:
-            keywords.append(word)
+        if token not in seen:
+            seen.add(token)
+            keywords.append(token)
 
     return keywords
 
@@ -157,37 +293,25 @@ def calculate_skill_score(
     required_skills: list[str],
     resume_skills: list[str],
 ) -> float:
-    """
-    Calculate percentage of required skills
-    found in the resume.
-    """
+    """Calculate the percentage of required skills found."""
+    required = {
+        _skill_key(skill)
+        for skill in required_skills
+        if _skill_key(skill)
+    }
 
-    if not required_skills:
+    resume = {
+        _skill_key(skill)
+        for skill in resume_skills
+        if _skill_key(skill)
+    }
+
+    if not required:
         return 0.0
 
-    required_set = {
-        skill.lower()
-        for skill in required_skills
-    }
+    matched = required.intersection(resume)
 
-    resume_set = {
-        skill.lower()
-        for skill in resume_skills
-    }
-
-    matched = required_set.intersection(
-        resume_set
-    )
-
-    score = (
-        len(matched)
-        / len(required_set)
-    ) * 100
-
-    return round(
-        score,
-        2,
-    )
+    return round(len(matched) / len(required) * 100, 2)
 
 
 # ============================================================
@@ -198,39 +322,20 @@ def calculate_keyword_score(
     job_keywords: list[str],
     resume_keywords: list[str],
 ) -> float:
-    """
-    Calculate percentage of job keywords
-    found in the resume.
-    """
+    """Calculate the percentage of job keywords in the resume."""
+    job_set = set(job_keywords)
+    resume_set = set(resume_keywords)
 
-    if not job_keywords:
+    if not job_set:
         return 0.0
 
-    job_set = set(
-        job_keywords
-    )
+    matched = job_set.intersection(resume_set)
 
-    resume_set = set(
-        resume_keywords
-    )
-
-    matched = job_set.intersection(
-        resume_set
-    )
-
-    score = (
-        len(matched)
-        / len(job_set)
-    ) * 100
-
-    return round(
-        score,
-        2,
-    )
+    return round(len(matched) / len(job_set) * 100, 2)
 
 
 # ============================================================
-# TF-IDF TEXT SIMILARITY
+# TEXT SIMILARITY
 # ============================================================
 
 def calculate_text_similarity(
@@ -238,34 +343,26 @@ def calculate_text_similarity(
     job_text: str,
 ) -> float:
     """
-    Calculate TF-IDF cosine similarity between
-    resume and job description.
+    Calculate TF-IDF cosine similarity as a percentage.
+
+    Returns zero when either text is empty or the vectorizer
+    cannot calculate a meaningful comparison.
     """
-
-    resume_text = normalize_text(
-        resume_text
-    )
-
-    job_text = normalize_text(
-        job_text
-    )
+    resume_text = normalize_text(resume_text)
+    job_text = normalize_text(job_text)
 
     if not resume_text or not job_text:
         return 0.0
 
-    documents = [
-        resume_text,
-        job_text,
-    ]
-
-    vectorizer = TfidfVectorizer(
-        stop_words="english"
-    )
-
     try:
+        vectorizer = TfidfVectorizer(
+            lowercase=True,
+            ngram_range=(1, 2),
+            sublinear_tf=True,
+        )
 
         vectors = vectorizer.fit_transform(
-            documents
+            [resume_text, job_text]
         )
 
         similarity = cosine_similarity(
@@ -273,322 +370,201 @@ def calculate_text_similarity(
             vectors[1:2],
         )[0][0]
 
-        return round(
-            float(similarity * 100),
-            2,
-        )
+        return round(float(similarity) * 100, 2)
 
-    except ValueError:
-
+    except (ValueError, TypeError):
         return 0.0
 
 
 # ============================================================
-# EXPERIENCE MATCH
+# EXPERIENCE MATCHING
 # ============================================================
+
+def _extract_experience_years(text: str) -> list[float]:
+    """
+    Extract explicitly stated experience durations.
+
+    Examples:
+        2 years of experience
+        1.5 years experience
+        6 months of experience
+        18 months of professional experience
+    """
+    normalized = normalize_text(text)
+    years = []
+
+    # Years: 1 year, 2.5 years, 3 yrs.
+    year_pattern = re.compile(
+        r"(?<![\w.])(\d+(?:\.\d+)?)\s*"
+        r"(?:\+?\s*)?(?:years?|yrs?)(?!\w)",
+        re.IGNORECASE,
+    )
+
+    for match in year_pattern.finditer(normalized):
+        value = float(match.group(1))
+
+        # Avoid interpreting an implausibly large number
+        # as work experience.
+        if 0 <= value <= 60:
+            years.append(value)
+
+    # Months: 6 months, 18 months.
+    month_pattern = re.compile(
+        r"(?<!\w)(\d+)\s*months?(?!\w)",
+        re.IGNORECASE,
+    )
+
+    for match in month_pattern.finditer(normalized):
+        value = int(match.group(1))
+
+        if 0 <= value <= 720:
+            years.append(value / 12)
+
+    return years
+
+
+def _extract_required_experience(job_text: str):
+    """
+    Extract the minimum and optional maximum experience
+    from a job description.
+
+    Returns:
+        (minimum_years, maximum_years)
+
+    A missing minimum means no reliable numeric requirement
+    was found.
+    """
+    text = normalize_text(job_text)
+
+    # Examples: 1-3 years, 1 to 3 years, 1–3 yrs.
+    range_pattern = re.compile(
+        r"(?<!\d)(\d+(?:\.\d+)?)\s*"
+        r"(?:-|to)\s*"
+        r"(\d+(?:\.\d+)?)\s*"
+        r"(?:years?|yrs?)",
+        re.IGNORECASE,
+    )
+
+    match = range_pattern.search(text)
+
+    if match:
+        minimum = float(match.group(1))
+        maximum = float(match.group(2))
+
+        if maximum >= minimum:
+            return minimum, maximum
+
+    # Examples: 2+ years, minimum 2 years, at least 2 years.
+    minimum_patterns = [
+        r"(?:at least|minimum of|min\.?)\s*"
+        r"(\d+(?:\.\d+)?)\s*(?:\+?\s*)?(?:years?|yrs?)",
+
+        r"(\d+(?:\.\d+)?)\s*\+\s*(?:years?|yrs?)",
+
+        r"(\d+(?:\.\d+)?)\s*(?:years?|yrs?)\s+"
+        r"(?:of\s+)?(?:relevant\s+)?experience\s+"
+        r"(?:required|minimum)",
+    ]
+
+    for pattern in minimum_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+
+        if match:
+            return float(match.group(1)), None
+
+    # Examples: 2 years of experience required.
+    ordinary_pattern = re.compile(
+        r"(\d+(?:\.\d+)?)\s*(?:years?|yrs?)\s+"
+        r"(?:of\s+)?(?:relevant\s+)?experience",
+        re.IGNORECASE,
+    )
+
+    match = ordinary_pattern.search(text)
+
+    if match:
+        return float(match.group(1)), None
+
+    return None, None
+
 
 def calculate_experience_match(
     resume_text: str,
     job_text: str,
 ) -> float:
     """
-    Compare resume experience with job experience
-    requirements.
+    Estimate experience alignment as a percentage.
 
-    Handles:
-
-    - Fresher
-    - Student
-    - Final-year student
-    - Internship
-    - Intern Developer
-    - Entry-level
-    - 0-1 years
-    - 0-2 years
-    - 1-3 years
-    - 2+ years
-    - Explicit experience such as 1 year
+    Important:
+    - Explicit numeric experience is preferred.
+    - Student/fresher wording alone does not prove zero
+      work experience.
+    - If experience cannot be determined, return 50 rather
+      than assuming a perfect match.
     """
+    resume = normalize_text(resume_text)
+    job = normalize_text(job_text)
 
-    normalized_resume = normalize_text(
-        resume_text
+    required_min, required_max = _extract_required_experience(
+        job
     )
 
-    normalized_job = normalize_text(
-        job_text
-    )
-
-    # --------------------------------------------------------
-    # Detect fresher / entry-level indicators
-    # --------------------------------------------------------
-
-    fresher_indicators = [
-        "fresher",
-        "fresh graduate",
-        "recent graduate",
-        "entry level",
-        "entry-level",
-        "graduate",
-        "student",
-        "final year",
-        "final-year",
-    ]
-
-    is_fresher = any(
-        indicator in normalized_resume
-        for indicator in fresher_indicators
-    )
-
-    # --------------------------------------------------------
-    # Detect internship experience
-    # --------------------------------------------------------
-
-    internship_indicators = [
-        "internship",
-        "intern",
-        "intern developer",
-        "internship experience",
-        "intern developer",
-        "summer intern",
-        "software intern",
-        "developer intern",
-    ]
-
-    has_internship = any(
-        indicator in normalized_resume
-        for indicator in internship_indicators
-    )
-
-    # --------------------------------------------------------
-    # Extract explicit experience from resume
-    # --------------------------------------------------------
-
-    resume_years = []
-
-    experience_patterns = [
-        r"(\d+(?:\.\d+)?)\+?\s*(?:years|year)",
-        r"(\d+(?:\.\d+)?)\+?\s*(?:yrs|yr)",
-    ]
-
-    for pattern in experience_patterns:
-
-        matches = re.findall(
-            pattern,
-            normalized_resume,
-        )
-
-        for value in matches:
-
-            try:
-
-                resume_years.append(
-                    float(value)
-                )
-
-            except ValueError:
-                pass
-
-    # --------------------------------------------------------
-    # Detect entry-level job
-    # --------------------------------------------------------
-
-    entry_level_indicators = [
-        "fresher",
-        "fresh graduate",
-        "recent graduate",
-        "entry level",
-        "entry-level",
-        "0-1",
-        "0 - 1",
-        "0 to 1",
-        "0–1",
-        "0-2",
-        "0 - 2",
-        "0 to 2",
-        "0–2",
-    ]
-
-    entry_level_job = any(
-        indicator in normalized_job
-        for indicator in entry_level_indicators
-    )
-
-    # --------------------------------------------------------
-    # Extract experience range from job
-    # --------------------------------------------------------
-
-    required_min_years = None
-    required_max_years = None
-
-    range_patterns = [
-        r"(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:years|year|yrs|yr)",
-        r"(\d+(?:\.\d+)?)\s+to\s+(\d+(?:\.\d+)?)\s*(?:years|year|yrs|yr)",
-    ]
-
-    for pattern in range_patterns:
-
-        match = re.search(
-            pattern,
-            normalized_job,
-        )
-
-        if match:
-
-            required_min_years = float(
-                match.group(1)
-            )
-
-            required_max_years = float(
-                match.group(2)
-            )
-
-            break
-
-    # --------------------------------------------------------
-    # Extract minimum experience
-    #
-    # Examples:
-    # 2+ years
-    # 2 years
-    # --------------------------------------------------------
-
-    if required_min_years is None:
-
-        plus_match = re.search(
-            r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years|year|yrs|yr)",
-            normalized_job,
-        )
-
-        if plus_match:
-
-            required_min_years = float(
-                plus_match.group(1)
-            )
-
-    # --------------------------------------------------------
-    # Fresher / internship + entry-level job
-    #
-    # This is especially important for your resume because
-    # it contains:
-    #
-    # INTERNSHIP EXPERIENCE
-    # Intern Developer
-    #
-    # and the job requires 0-2 years.
-    # --------------------------------------------------------
-
-    if (
-        (is_fresher or has_internship)
-        and entry_level_job
-    ):
-
+    # If the job does not specify a numeric requirement,
+    # do not penalize the candidate for unknown experience.
+    if required_min is None:
         return 100.0
 
-    # --------------------------------------------------------
-    # No explicit experience in resume
-    # --------------------------------------------------------
+    experience_values = _extract_experience_years(resume)
 
-    if not resume_years:
+    # Prefer an explicitly stated total experience duration.
+    # The largest value is used as a simple approximation;
+    # this is not a full employment-history calculator.
+    if experience_values:
+        actual_years = max(experience_values)
 
-        if is_fresher:
-
-            if entry_level_job:
-                return 100.0
-
-            return 50.0
-
-        # Internship + entry-level job
-        if has_internship:
-
-            if entry_level_job:
-                return 100.0
-
-            return 60.0
-
-        # Resume does not mention experience.
-        # Give partial credit rather than assuming
-        # zero experience.
-        return 50.0
-
-    # --------------------------------------------------------
-    # Resume has explicit experience
-    # --------------------------------------------------------
-
-    resume_experience = max(
-        resume_years
-    )
-
-    # --------------------------------------------------------
-    # Job has no explicit requirement
-    # --------------------------------------------------------
-
-    if required_min_years is None:
-
-        return 100.0
-
-    # --------------------------------------------------------
-    # Job has an experience range
-    #
-    # Example:
-    # 0-2 years
-    # --------------------------------------------------------
-
-    if required_max_years is not None:
-
-        # Experience falls inside required range
-        if (
-            resume_experience >= required_min_years
-            and resume_experience <= required_max_years
-        ):
-
+        if actual_years >= required_min:
             return 100.0
 
-        # More experience than required
-        if resume_experience > required_max_years:
-
+        if required_min <= 0:
             return 100.0
 
-        # Less experience than required minimum
-        if resume_experience < required_min_years:
+        return round(
+            min(actual_years / required_min * 100, 100.0),
+            2,
+        )
 
-            if required_min_years == 0:
-
-                return 100.0
-
-            percentage = (
-                resume_experience
-                / required_min_years
-            ) * 100
-
-            return round(
-                min(percentage, 100),
-                2,
-            )
-
-    # --------------------------------------------------------
-    # Job has only a minimum requirement
-    #
-    # Example:
-    # 2+ years
-    # --------------------------------------------------------
-
-    if resume_experience >= required_min_years:
-
-        return 100.0
-
-    if required_min_years == 0:
-
-        return 100.0
-
-    percentage = (
-        resume_experience
-        / required_min_years
-    ) * 100
-
-    return round(
-        min(percentage, 100),
-        2,
+    # No explicit number: use only cautious contextual clues.
+    entry_level_job = bool(
+        re.search(
+            r"\b("
+            r"entry[- ]level|fresher|freshers|"
+            r"graduate role|junior role|internship|"
+            r"interns? wanted|no experience required|"
+            r"0\s*(?:-|to)\s*\d+\s*(?:years?|yrs?)"
+            r")\b",
+            job,
+        )
     )
+
+    fresher_resume = bool(
+        re.search(
+            r"\b("
+            r"fresher|recent graduate|new graduate|"
+            r"entry[- ]level candidate|"
+            r"seeking first job|no professional experience"
+            r")\b",
+            resume,
+        )
+    )
+
+    if required_min == 0:
+        return 100.0
+
+    if entry_level_job and fresher_resume:
+        return 100.0
+
+    # No explicit experience number means we cannot reliably
+    # confirm whether the requirement is met.
+    return 50.0
 
 
 # ============================================================
@@ -600,66 +576,48 @@ def generate_recommendations(
     match_score: float,
     experience_match: float,
 ) -> list[str]:
-    """
-    Generate recommendations based on
-    missing skills, match score and experience.
-    """
-
+    """Generate recommendations based on matching results."""
     recommendations = []
 
-    # --------------------------------------------------------
-    # Missing skills
-    # --------------------------------------------------------
-
     if missing_skills:
-
-        skills_text = ", ".join(
-            missing_skills[:5]
-        )
+        skills_text = ", ".join(missing_skills[:5])
 
         recommendations.append(
-            f"Improve or add these skills: "
-            f"{skills_text}."
+            f"Improve or add these skills: {skills_text}."
         )
-
-    # --------------------------------------------------------
-    # Experience
-    # --------------------------------------------------------
 
     if experience_match < 50:
-
         recommendations.append(
-            "Consider gaining more practical "
-            "experience through projects, internships, "
-            "or relevant work experience."
+            "Consider gaining more practical experience through "
+            "projects, internships, or relevant work experience."
         )
-
-    # --------------------------------------------------------
-    # Overall score
-    # --------------------------------------------------------
+    elif experience_match < 100:
+        recommendations.append(
+            "Make relevant employment dates, project durations, "
+            "and practical experience clear on the resume."
+        )
 
     if match_score < 50:
-
         recommendations.append(
-            "The resume has limited alignment with "
-            "the selected job. Tailor the resume "
-            "toward the job requirements."
+            "The resume has limited alignment with this job. "
+            "Tailor it to the required skills and responsibilities."
         )
-
     elif match_score < 75:
-
         recommendations.append(
-            "The resume has moderate alignment. "
-            "Adding missing technical skills and "
-            "relevant project experience may improve "
-            "the match."
+            "The resume has moderate alignment. Adding relevant "
+            "skills and project details may improve the match."
+        )
+    else:
+        recommendations.append(
+            "The resume has strong alignment with the selected job. "
+            "Verify the candidate's skills and experience during "
+            "the recruitment process."
         )
 
-    else:
-
+    if not recommendations:
         recommendations.append(
-            "The resume has strong alignment with "
-            "the selected job."
+            "Review the resume and job requirements together "
+            "to confirm the candidate's suitability."
         )
 
     return recommendations
@@ -673,220 +631,175 @@ def match_resume_with_job(
     resume_text: str,
     job_description: str,
     required_skills_text: str | None = None,
-):
+) -> dict:
     """
     Compare a resume with a job description.
 
-    Returns:
-
-    - Match score
-    - Matched skills
-    - Missing skills
-    - Matched keywords
-    - Missing keywords
-    - Experience match
-    - Summary
-    - Recommendations
+    Preserves the existing API response fields:
+        match_score
+        matched_skills
+        missing_skills
+        matched_keywords
+        missing_keywords
+        experience_match
+        summary
+        recommendations
     """
+    resume_text = str(resume_text or "").strip()
+    job_description = str(job_description or "").strip()
+    required_skills_text = str(
+        required_skills_text or ""
+    ).strip()
 
-    # ========================================================
-    # RESUME SKILLS
-    # ========================================================
+    # Combine the job description and explicit skill field.
+    job_text = " ".join(
+        part
+        for part in [job_description, required_skills_text]
+        if part
+    ).strip()
 
-    resume_skills = extract_skills_from_text(
-        resume_text
-    )
+    # Do not create misleading scores for empty input.
+    if not resume_text or not job_text:
+        return {
+            "match_score": 0.0,
+            "matched_skills": [],
+            "missing_skills": [],
+            "matched_keywords": [],
+            "missing_keywords": [],
+            "experience_match": 50.0,
+            "summary": (
+                "A resume and a job description are both required "
+                "to calculate a meaningful match."
+            ),
+            "recommendations": [
+                "Provide extracted resume text and a job description "
+                "before running the matching analysis."
+            ],
+        }
 
-    # ========================================================
-    # JOB SKILLS
-    # ========================================================
+    # --------------------------------------------------------
+    # SKILLS
+    # --------------------------------------------------------
 
-    job_skills = extract_skills_from_text(
-        job_description
-    )
+    resume_skills = extract_skills_from_text(resume_text)
 
-    # Add skills from required_skills field
-    if required_skills_text:
+    job_skills = extract_skills_from_text(job_text)
 
-        additional_skills = (
-            extract_skills_from_text(
-                required_skills_text
-            )
-        )
-
-        for skill in additional_skills:
-
-            if skill not in job_skills:
-
-                job_skills.append(
-                    skill
-                )
-
-    job_skills = sorted(
-        set(job_skills),
-        key=str.lower,
-    )
-
-    # ========================================================
-    # MATCHED SKILLS
-    # ========================================================
-
-    resume_skill_set = {
-        skill.lower()
+    resume_skill_keys = {
+        _skill_key(skill)
         for skill in resume_skills
     }
 
     matched_skills = [
         skill
         for skill in job_skills
-        if skill.lower()
-        in resume_skill_set
+        if _skill_key(skill) in resume_skill_keys
     ]
-
-    # ========================================================
-    # MISSING SKILLS
-    # ========================================================
 
     missing_skills = [
         skill
         for skill in job_skills
-        if skill.lower()
-        not in resume_skill_set
+        if _skill_key(skill) not in resume_skill_keys
     ]
 
-    # ========================================================
-    # RESUME KEYWORDS
-    # ========================================================
+    # --------------------------------------------------------
+    # KEYWORDS
+    # --------------------------------------------------------
 
-    resume_keywords = extract_keywords(
-        resume_text
-    )
+    resume_keywords = extract_keywords(resume_text)
+    job_keywords = extract_keywords(job_text)
 
-    # ========================================================
-    # JOB TEXT
-    # ========================================================
-
-    job_text = (
-        job_description
-        + " "
-        + (required_skills_text or "")
-    )
-
-    # ========================================================
-    # JOB KEYWORDS
-    # ========================================================
-
-    job_keywords = extract_keywords(
-        job_text
-    )
-
-    # ========================================================
-    # MATCHED KEYWORDS
-    # ========================================================
+    resume_keyword_set = set(resume_keywords)
 
     matched_keywords = [
         keyword
         for keyword in job_keywords
-        if keyword in resume_keywords
+        if keyword in resume_keyword_set
     ]
-
-    # ========================================================
-    # MISSING KEYWORDS
-    # ========================================================
 
     missing_keywords = [
         keyword
         for keyword in job_keywords
-        if keyword not in resume_keywords
+        if keyword not in resume_keyword_set
     ]
 
-    # ========================================================
-    # CALCULATE SKILL SCORE
-    # ========================================================
+    # --------------------------------------------------------
+    # COMPONENT SCORES
+    # --------------------------------------------------------
 
     skill_score = calculate_skill_score(
         job_skills,
         resume_skills,
     )
 
-    # ========================================================
-    # CALCULATE KEYWORD SCORE
-    # ========================================================
-
     keyword_score = calculate_keyword_score(
         job_keywords,
         resume_keywords,
     )
-
-    # ========================================================
-    # CALCULATE TF-IDF TEXT SIMILARITY
-    # ========================================================
 
     text_similarity = calculate_text_similarity(
         resume_text,
         job_text,
     )
 
-    # ========================================================
-    # CALCULATE EXPERIENCE MATCH
-    # ========================================================
-
     experience_match = calculate_experience_match(
         resume_text,
         job_text,
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # FINAL MATCH SCORE
-    # ========================================================
-    #
-    # Skill Match       = 50%
-    # Keyword Match     = 20%
-    # Text Similarity   = 30%
-    #
-    # Experience match is reported separately.
-    # ========================================================
+    # --------------------------------------------------------
 
+    # Preserve the project's existing scoring weights.
     match_score = (
-        (skill_score * 0.50)
-        + (keyword_score * 0.20)
-        + (text_similarity * 0.30)
+        skill_score * SKILL_WEIGHT
+        + keyword_score * KEYWORD_WEIGHT
+        + text_similarity * TEXT_SIMILARITY_WEIGHT
     )
 
     match_score = round(
-        match_score,
+        max(0.0, min(match_score, 100.0)),
         2,
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # SUMMARY
-    # ========================================================
+    # --------------------------------------------------------
+
+    if job_skills:
+        skill_summary = (
+            f"The resume matches {len(matched_skills)} out of "
+            f"{len(job_skills)} identified job skills."
+        )
+    else:
+        skill_summary = (
+            "No recognized technical skills were identified "
+            "in the job description."
+        )
 
     summary = (
-        f"The resume matches "
-        f"{len(matched_skills)} out of "
-        f"{len(job_skills)} identified required skills. "
+        f"{skill_summary} "
         f"Skill alignment is {skill_score}%, "
         f"keyword alignment is {keyword_score}%, "
         f"and text similarity is {text_similarity}%. "
         f"Experience match is {experience_match}%. "
-        f"The overall job match score is "
-        f"{match_score}%."
+        f"The overall job match score is {match_score}%."
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # RECOMMENDATIONS
-    # ========================================================
+    # --------------------------------------------------------
 
     recommendations = generate_recommendations(
-        missing_skills,
-        match_score,
-        experience_match,
+        missing_skills=missing_skills,
+        match_score=match_score,
+        experience_match=experience_match,
     )
 
-    # ========================================================
-    # RETURN RESULT
-    # ========================================================
+    # --------------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------------
 
     return {
         "match_score": match_score,
