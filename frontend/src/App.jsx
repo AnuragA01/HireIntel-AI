@@ -3749,6 +3749,7 @@ function RecruiterPlaceholder({
    RESUME ANALYSIS PAGE
 ============================================================ */
 
+
 function ResumeAnalysisPage() {
   const navigate = useNavigate();
   const { resumeId } = useParams();
@@ -3769,36 +3770,44 @@ function ResumeAnalysisPage() {
 
   const requestAnalysis = async (method) => {
     const token = localStorage.getItem("hireintel_token");
+
     if (!token) {
       clearSessionAndLogin();
       throw new Error("Please log in to continue.");
     }
 
     const id = Number(resumeId);
+
     if (!resumeId || !Number.isInteger(id) || id <= 0) {
       throw new Error("Invalid resume ID.");
     }
 
     let response;
+
     try {
-      response = await fetch(`${API_BASE_URL}/resume-analysis/${id}`, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-      });
+      response = await fetch(
+        `${API_BASE_URL}/resume-analysis/${id}`,
+        {
+          method,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        }
+      );
     } catch {
       throw new Error(
-        "Unable to connect to the HireIntel AI server. Make sure the FastAPI backend is running on port 8000."
+        "Unable to connect to HireIntel AI. Make sure the FastAPI backend is running on port 8000."
       );
     }
 
     const data = await response.json().catch(() => null);
+
     if (response.status === 401) {
       clearSessionAndLogin();
       throw new Error("Your session has expired. Please log in again.");
     }
+
     if (!response.ok) {
       throw new Error(
         getErrorMessage(
@@ -3809,6 +3818,7 @@ function ResumeAnalysisPage() {
         )
       );
     }
+
     return data;
   };
 
@@ -3818,21 +3828,32 @@ function ResumeAnalysisPage() {
     async function loadAnalysis() {
       setLoading(true);
       setError("");
+
       try {
         const data = await requestAnalysis("GET");
-        if (!cancelled) setAnalysis(data);
+
+        if (!cancelled) {
+          setAnalysis(data);
+        }
       } catch (err) {
-        if (!cancelled) setError(err.message || "Unable to load resume analysis.");
+        if (!cancelled) {
+          setError(
+            err.message || "Unable to load resume analysis."
+          );
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     loadAnalysis();
+
     return () => {
       cancelled = true;
     };
-    // Loading is intentionally triggered when the route's resume ID changes.
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId, navigate]);
 
@@ -3840,6 +3861,7 @@ function ResumeAnalysisPage() {
     setReanalyzing(true);
     setError("");
     setSuccess("");
+
     try {
       const data = await requestAnalysis("POST");
       setAnalysis(data);
@@ -3852,25 +3874,82 @@ function ResumeAnalysisPage() {
   };
 
   const asItems = (value, separator = ",") => {
-    if (value === null || value === undefined || value === "") return [];
+    if (value === null || value === undefined || value === "") {
+      return [];
+    }
+
     if (Array.isArray(value)) {
       return value
         .map((item) => {
-          if (typeof item === "string" || typeof item === "number") return String(item).trim();
-          if (item && typeof item === "object") return String(item.name || item.title || item.skill || JSON.stringify(item));
+          if (
+            typeof item === "string" ||
+            typeof item === "number"
+          ) {
+            return String(item).trim();
+          }
+
+          if (item && typeof item === "object") {
+            return String(
+              item.name ||
+              item.title ||
+              item.skill ||
+              JSON.stringify(item)
+            );
+          }
+
           return "";
         })
         .filter(Boolean);
     }
-    return String(value).split(separator).map((item) => item.trim()).filter(Boolean);
+
+    return String(value)
+      .split(separator)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+
+  const pageStyle = {
+    minHeight: "100vh",
+    background: "#f6f7fb",
+    padding: "clamp(16px, 4vw, 40px) 16px 60px",
+    boxSizing: "border-box",
+    color: "#202944",
+  };
+
+  const containerStyle = {
+    width: "100%",
+    maxWidth: "1180px",
+    margin: "0 auto",
+    boxSizing: "border-box",
   };
 
   const cardStyle = {
-    background: "#fff",
-    borderRadius: "20px",
-    padding: "30px",
-    marginBottom: "22px",
-    boxShadow: "0 5px 20px rgba(40,40,80,0.04)",
+    background: "#ffffff",
+    border: "1px solid #e9ebf4",
+    borderRadius: "18px",
+    padding: "clamp(18px, 3vw, 28px)",
+    boxShadow: "0 5px 20px rgba(40, 40, 80, 0.035)",
+    minWidth: 0,
+    boxSizing: "border-box",
+    overflowWrap: "anywhere",
+  };
+
+  const sectionTitleStyle = {
+    margin: "0 0 20px",
+    fontSize: "20px",
+    fontWeight: "800",
+    color: "#202944",
+    overflowWrap: "anywhere",
+  };
+
+  const bodyTextStyle = {
+    color: "#59627a",
+    lineHeight: 1.8,
+    margin: 0,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    wordBreak: "normal",
+    hyphens: "none",
   };
 
   const score =
@@ -3880,12 +3959,143 @@ function ResumeAnalysisPage() {
       ? Number(analysis.resume_score)
       : null;
 
+  const skills = asItems(analysis?.skills);
+  const keywords = asItems(analysis?.keywords);
+  const strengths = asItems(analysis?.strengths, "\n");
+  const weaknesses = asItems(analysis?.weaknesses, "\n");
+  const recommendations = asItems(
+    analysis?.recommendations,
+    "\n"
+  );
+
+  const detailSections = [
+    ["Education", analysis?.education],
+    ["Experience", analysis?.experience],
+    ["Projects", analysis?.projects],
+    ["Certifications", analysis?.certifications],
+  ];
+
+  const renderDetail = (value, title) => {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => {
+          if (typeof item === "string") return item;
+          if (item && typeof item === "object") {
+            return Object.entries(item)
+              .map(([key, val]) => `${key}: ${val}`)
+              .join("\n");
+          }
+          return String(item ?? "");
+        })
+        .filter(Boolean)
+        .join("\n\n");
+    }
+
+    if (value && typeof value === "object") {
+      return Object.entries(value)
+        .map(([key, val]) => `${key}: ${val}`)
+        .join("\n\n");
+    }
+
+    return value || `No ${title.toLowerCase()} information available.`;
+  };
+
+  const renderTagSection = (title, items, variant) => {
+    const isSkill = variant === "skill";
+
+    return (
+      <section key={title} style={cardStyle}>
+        <h2 style={sectionTitleStyle}>{title}</h2>
+
+        {items.length > 0 ? (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+              gap: "10px",
+            }}
+          >
+            {items.map((item, index) => (
+              <span
+                key={`${title}-${index}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  maxWidth: "100%",
+                  padding: "9px 14px",
+                  borderRadius: "10px",
+                  background: isSkill ? "#f0edff" : "#eaf8f1",
+                  border: `1px solid ${
+                    isSkill ? "#e0d9ff" : "#d3f0e1"
+                  }`,
+                  color: isSkill ? "#5e4ee5" : "#137a55",
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  lineHeight: 1.5,
+                  overflowWrap: "anywhere",
+                  boxSizing: "border-box",
+                }}
+              >
+                {item}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p style={{ color: "#8b91a5", margin: 0 }}>
+            No {title.toLowerCase()} available.
+          </p>
+        )}
+      </section>
+    );
+  };
+
+  const renderListSection = (title, items, emptyMessage) => (
+    <section style={cardStyle} key={title}>
+      <h2 style={sectionTitleStyle}>{title}</h2>
+
+      {items.length > 0 ? (
+        <ul
+          style={{
+            margin: 0,
+            paddingLeft: "22px",
+            color: "#46506a",
+            lineHeight: 1.85,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {items.map((item, index) => (
+            <li
+              key={`${title}-${index}`}
+              style={{ marginBottom: "10px" }}
+            >
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p style={{ color: "#8b91a5", margin: 0 }}>
+          {emptyMessage}
+        </p>
+      )}
+    </section>
+  );
+
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#f7f8fc", display: "flex", alignItems: "center", justifyContent: "center", padding: "30px" }}>
+      <div
+        style={{
+          ...pageStyle,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <div style={{ textAlign: "center" }}>
           <h2>Loading Resume Intelligence...</h2>
-          <p style={{ color: "#68708a" }}>Fetching analysis for Resume #{resumeId}.</p>
+          <p style={{ color: "#68708a" }}>
+            Fetching analysis for Resume #{resumeId}.
+          </p>
         </div>
       </div>
     );
@@ -3893,14 +4103,65 @@ function ResumeAnalysisPage() {
 
   if (error && !analysis) {
     return (
-      <div style={{ minHeight: "100vh", background: "#f7f8fc", display: "flex", alignItems: "center", justifyContent: "center", padding: "30px" }}>
-        <div style={{ width: "100%", maxWidth: "650px", background: "#fff", borderRadius: "22px", padding: "40px", textAlign: "center", boxShadow: "0 10px 35px rgba(40,40,80,0.07)" }}>
-          <div style={{ fontSize: "42px", marginBottom: "15px" }}>⚠️</div>
+      <div
+        style={{
+          ...pageStyle,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            ...cardStyle,
+            width: "100%",
+            maxWidth: "650px",
+            textAlign: "center",
+            padding: "35px 24px",
+          }}
+        >
+          <div style={{ fontSize: "42px", marginBottom: "15px" }}>
+            ⚠️
+          </div>
+
           <h1>Analysis Not Available</h1>
-          <p style={{ color: "#a12828", marginTop: "12px", lineHeight: "1.7" }}>{error}</p>
-          <div style={{ display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap", marginTop: "24px" }}>
-            <button type="button" className="btn btn-primary" onClick={() => navigate("/candidate/resumes")}>← Back to My Resumes</button>
-            <button type="button" className="btn btn-outline" onClick={() => window.location.reload()}>Try Again</button>
+
+          <p
+            role="alert"
+            style={{
+              color: "#a12828",
+              marginTop: "12px",
+              lineHeight: 1.7,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {error}
+          </p>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+              marginTop: "24px",
+            }}
+          >
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => navigate("/candidate/resumes")}
+            >
+              ← Back to My Resumes
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => window.location.reload()}
+            >
+              Try Again
+            </button>
           </div>
         </div>
       </div>
@@ -3908,89 +4169,316 @@ function ResumeAnalysisPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f7f8fc", padding: "45px 20px 70px" }}>
-      <div style={{ maxWidth: "1180px", margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "20px", flexWrap: "wrap", marginBottom: "25px" }}>
-          <div>
-            <p style={{ color: "#6652e8", fontWeight: "800", letterSpacing: "0.08em", marginBottom: "8px" }}>AI RESUME INTELLIGENCE</p>
-            <h1 style={{ margin: 0 }}>Resume Analysis</h1>
-            <p style={{ color: "#68708a", marginTop: "8px" }}>Detailed analysis for Resume #{resumeId}</p>
+    <div style={pageStyle}>
+      <div style={containerStyle}>
+        <header
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "20px",
+            flexWrap: "wrap",
+            marginBottom: "28px",
+          }}
+        >
+          <div style={{ minWidth: 0, flex: "1 1 280px" }}>
+            <p
+              style={{
+                color: "#6652e8",
+                fontSize: "12px",
+                fontWeight: "800",
+                letterSpacing: "0.12em",
+                margin: "0 0 8px",
+              }}
+            >
+              AI RESUME INTELLIGENCE
+            </p>
+
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "clamp(26px, 4vw, 36px)",
+                letterSpacing: "-0.03em",
+                overflowWrap: "anywhere",
+              }}
+            >
+              Resume Analysis
+            </h1>
+
+            <p style={{ color: "#68708a", margin: "8px 0 0" }}>
+              Detailed analysis for Resume #{resumeId}
+            </p>
           </div>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            <button type="button" className="btn btn-outline" onClick={() => navigate("/candidate/resumes")}>← My Resumes</button>
-            <button type="button" className="btn btn-primary" disabled={reanalyzing} onClick={handleReanalyze}>
+
+          <div
+            style={{
+              display: "flex",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => navigate("/candidate/resumes")}
+            >
+              ← My Resumes
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={reanalyzing}
+              onClick={handleReanalyze}
+            >
               {reanalyzing ? "Analyzing..." : "Reanalyze Resume"}
             </button>
           </div>
-        </div>
+        </header>
 
-        {error && <div role="alert" style={{ padding: "14px 16px", background: "#fff0f0", border: "1px solid #ffcaca", color: "#a12828", borderRadius: "10px", marginBottom: "18px" }}>{error}</div>}
-        {success && <div role="status" style={{ padding: "14px 16px", background: "#ecfdf3", border: "1px solid #b7ebc9", color: "#176b3a", borderRadius: "10px", marginBottom: "18px" }}>{success}</div>}
+        {error && (
+          <div
+            role="alert"
+            style={{
+              padding: "14px 16px",
+              background: "#fff0f0",
+              border: "1px solid #ffcaca",
+              color: "#a12828",
+              borderRadius: "12px",
+              marginBottom: "18px",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {error}
+          </div>
+        )}
 
-        {analysis && <>
-          <section style={{ background: "linear-gradient(135deg, #6652e8, #7c6af0)", color: "#fff", borderRadius: "24px", padding: "35px", marginBottom: "22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "30px", flexWrap: "wrap", boxShadow: "0 15px 35px rgba(102,82,232,0.18)" }}>
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: "700", opacity: 0.85, marginBottom: "8px" }}>OVERALL RESUME SCORE</div>
-              <h2 style={{ margin: 0, fontSize: "24px" }}>AI-powered resume evaluation</h2>
-              <p style={{ margin: "8px 0 0", opacity: 0.85 }}>Based on the extracted resume information.</p>
-            </div>
-            <div style={{ minWidth: "135px", textAlign: "center", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "20px", padding: "18px 22px" }}>
-              <div style={{ fontSize: "44px", lineHeight: 1, fontWeight: "900" }}>{score !== null ? `${score}%` : "—"}</div>
-              <div style={{ marginTop: "7px", fontSize: "13px", fontWeight: "700", opacity: 0.85 }}>Resume Score</div>
-            </div>
-          </section>
+        {success && (
+          <div
+            role="status"
+            style={{
+              padding: "14px 16px",
+              background: "#ecfdf3",
+              border: "1px solid #b7ebc9",
+              color: "#176b3a",
+              borderRadius: "12px",
+              marginBottom: "18px",
+            }}
+          >
+            {success}
+          </div>
+        )}
 
-          <section style={cardStyle}>
-            <h2 style={{ marginTop: 0 }}>Professional Summary</h2>
-            <p style={{ color: "#59627a", lineHeight: "1.8", whiteSpace: "pre-line", marginBottom: 0 }}>{analysis.summary || "No summary available."}</p>
-          </section>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "22px", marginBottom: "22px" }}>
-            {[["Skills", analysis.skills, ","], ["Keywords", analysis.keywords, ","]].map(([title, value, separator]) => (
-              <section key={title} style={{ ...cardStyle, marginBottom: 0 }}>
-                <h2 style={{ marginTop: 0 }}>{title}</h2>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "9px" }}>
-                  {asItems(value, separator).length ? asItems(value, separator).map((item, index) => (
-                    <span key={`${title}-${index}`} style={{ padding: "9px 13px", borderRadius: "20px", background: title === "Skills" ? "#f0edff" : "#eef8f4", color: title === "Skills" ? "#5e4ee5" : "#137a55", fontWeight: "700", fontSize: "14px" }}>{item}</span>
-                  )) : <span style={{ color: "#8b91a5" }}>No {title.toLowerCase()} available.</span>}
+        {analysis && (
+          <>
+            <section
+              style={{
+                background: "linear-gradient(135deg, #5542d9, #8877f5)",
+                color: "#fff",
+                borderRadius: "22px",
+                padding: "clamp(22px, 4vw, 35px)",
+                marginBottom: "22px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "24px",
+                flexWrap: "wrap",
+                boxShadow: "0 12px 30px rgba(102,82,232,0.16)",
+                boxSizing: "border-box",
+              }}
+            >
+              <div style={{ minWidth: 0, flex: "1 1 260px" }}>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "800",
+                    letterSpacing: "0.1em",
+                    opacity: 0.9,
+                    marginBottom: "10px",
+                  }}
+                >
+                  OVERALL RESUME SCORE
                 </div>
-              </section>
-            ))}
-          </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "22px", marginBottom: "22px" }}>
-            {[["Education", analysis.education], ["Experience", analysis.experience], ["Projects", analysis.projects], ["Certifications", analysis.certifications]].map(([title, value]) => (
-              <section key={title} style={{ ...cardStyle, marginBottom: 0 }}>
-                <h2 style={{ marginTop: 0 }}>{title}</h2>
-                <p style={{ color: "#59627a", lineHeight: "1.8", whiteSpace: "pre-line", margin: 0 }}>{Array.isArray(value) ? value.join("\n") : value || `No ${title.toLowerCase()} information available.`}</p>
-              </section>
-            ))}
-          </div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "clamp(20px, 3vw, 27px)",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  AI-powered resume evaluation
+                </h2>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "22px", marginBottom: "22px" }}>
-            {[["Strengths", analysis.strengths], ["Areas to Improve", analysis.weaknesses]].map(([title, value]) => (
-              <section key={title} style={{ ...cardStyle, marginBottom: 0 }}>
-                <h2 style={{ marginTop: 0 }}>{title}</h2>
-                {asItems(value, "\n").length ? <ul style={{ margin: 0, paddingLeft: "22px", color: "#42506a", lineHeight: "1.8" }}>{asItems(value, "\n").map((item, index) => <li key={`${title}-${index}`} style={{ marginBottom: "8px" }}>{item}</li>)}</ul> : <p style={{ color: "#8b91a5" }}>No information available.</p>}
-              </section>
-            ))}
-          </div>
+                <p style={{ margin: "10px 0 0", opacity: 0.9 }}>
+                  Based on the extracted resume information.
+                </p>
+              </div>
 
-          <section style={cardStyle}>
-            <h2 style={{ marginTop: 0 }}>AI Recommendations</h2>
-            {asItems(analysis.recommendations, "\n").length ? <ol style={{ color: "#46506a", lineHeight: "1.8", paddingLeft: "22px" }}>{asItems(analysis.recommendations, "\n").map((item, index) => <li key={`recommendation-${index}`} style={{ marginBottom: "8px" }}>{item}</li>)}</ol> : <p style={{ color: "#8b91a5" }}>No recommendations available.</p>}
-          </section>
+              <div
+                style={{
+                  minWidth: "125px",
+                  textAlign: "center",
+                  background: "rgba(255,255,255,0.14)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: "18px",
+                  padding: "18px 22px",
+                  boxSizing: "border-box",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "42px",
+                    lineHeight: 1.1,
+                    fontWeight: "900",
+                  }}
+                >
+                  {score !== null ? `${score}%` : "—"}
+                </div>
 
-          <p style={{ color: "#85899b", fontSize: "12px", lineHeight: "1.6", marginTop: "20px" }}>This resume score is an indicative application score, not a guarantee of ATS compatibility or job selection.</p>
-        </>}
+                <div
+                  style={{
+                    marginTop: "7px",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    opacity: 0.9,
+                  }}
+                >
+                  Resume Score
+                </div>
+              </div>
+            </section>
 
-        <div style={{ display: "flex", justifyContent: "center", marginTop: "30px" }}>
-          <button type="button" className="btn btn-primary" onClick={() => navigate("/candidate/resumes")}>← Back to My Resumes</button>
+            <section style={cardStyle}>
+              <h2 style={sectionTitleStyle}>
+                Professional Summary
+              </h2>
+
+              <p style={bodyTextStyle}>
+                {analysis.summary || "No summary available."}
+              </p>
+            </section>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
+                gap: "20px",
+                marginBottom: "22px",
+              }}
+            >
+              {renderTagSection("Skills", skills, "skill")}
+              {renderTagSection("Keywords", keywords, "keyword")}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
+                gap: "20px",
+                marginBottom: "22px",
+              }}
+            >
+              {detailSections.map(([title, value]) => (
+                <section key={title} style={cardStyle}>
+                  <h2 style={sectionTitleStyle}>{title}</h2>
+
+                  <p style={bodyTextStyle}>
+                    {renderDetail(value, title)}
+                  </p>
+                </section>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
+                gap: "20px",
+                marginBottom: "22px",
+              }}
+            >
+              {renderListSection(
+                "Strengths",
+                strengths,
+                "No strengths information available."
+              )}
+
+              {renderListSection(
+                "Areas to Improve",
+                weaknesses,
+                "No improvement areas available."
+              )}
+            </div>
+
+            <section style={cardStyle}>
+              <h2 style={sectionTitleStyle}>
+                AI Recommendations
+              </h2>
+
+              {recommendations.length > 0 ? (
+                <ol
+                  style={{
+                    color: "#46506a",
+                    lineHeight: 1.85,
+                    paddingLeft: "22px",
+                    margin: 0,
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {recommendations.map((item, index) => (
+                    <li
+                      key={`recommendation-${index}`}
+                      style={{ marginBottom: "10px" }}
+                    >
+                      {item}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p style={{ color: "#8b91a5", margin: 0 }}>
+                  No recommendations available.
+                </p>
+              )}
+            </section>
+
+            <p
+              style={{
+                color: "#85899b",
+                fontSize: "12px",
+                lineHeight: 1.6,
+                marginTop: "20px",
+              }}
+            >
+              This resume score is an indicative application score,
+              not a guarantee of ATS compatibility or job selection.
+            </p>
+          </>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            marginTop: "28px",
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => navigate("/candidate/resumes")}
+          >
+            ← Back to My Resumes
+          </button>
         </div>
       </div>
     </div>
   );
 }
+
 
 /* ============================================================
    RECRUITER EDIT JOB
