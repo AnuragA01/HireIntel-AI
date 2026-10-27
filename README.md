@@ -344,4 +344,28 @@ This project provides practical experience with:
 - React-based frontend development.
 - Database modeling and ORM integration.
 - JWT authentication and access control.
-- Resume text extraction and
+- Resume text extraction and data processing.
+- Resume-to-job matching logic.
+- AI/NLP library integration.
+- API testing, debugging, and deployment preparation.
+
+---
+
+## 👨‍💻 Author
+
+**Anurag Nitinkumar Aski**
+
+- 🐙 GitHub: [@AnuragA01](https://github.com/AnuragA01)
+- 💻 Project Repository: [HireIntel AI](https://github.com/AnuragA01/HireIntel-AI)
+
+---
+
+## 📜 License
+
+No license has been specified for this repository yet. If you intend to make the project open source, choose and add an appropriate license file before describing the project as open source.
+
+---
+
+<p align="center">
+  🚀 <strong>HireIntel AI — Turning Resume Data into Career Intelligence.</strong>
+</p>
